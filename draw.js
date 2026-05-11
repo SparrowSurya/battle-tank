@@ -59,5 +59,29 @@ class CanvasRenderer {
             this.ctx.stroke();
         }
     }
+
+    drawPolygon(args = {}) {
+        const {
+            points,
+            color,
+            thickness,
+        } = args;
+
+        const begin = points[0];
+        this.ctx.moveTo(begin.x, begin.y);
+        this.ctx.beginPath();
+
+        for (let i=0; i<points.length; i++) {
+            this.ctx.lineTo(points[i].x, points[i].y);
+        }
+
+        if (thickness === 0 || thickness === undefined || thickness == null) {
+            this.ctx.fillStyle = color;
+            this.ctx.fill();
+        } else {
+            this.ctx.strokeStyle = color;
+            this.ctx.stroke();
+        }
+    }
 }
 

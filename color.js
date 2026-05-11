@@ -5,7 +5,7 @@ function rgba(rgba = {}) {
 }
 
 function hex(rgb = {}) {
-    const { r = 255, g = 255, b = 255 } = rgb;
+    let { r = 255, g = 255, b = 255 } = rgb;
     r = r.toString(16).padStart(2, '0');
     g = g.toString(16).padStart(2, '0');
     b = b.toString(16).padStart(2, '0');
