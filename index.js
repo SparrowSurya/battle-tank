@@ -10,7 +10,7 @@ function config(canvas, overrides = {}) {
     const cols = canvasSize / squareSize;
 
     return {
-        canvasHeight: canvasSize,
+        canvasHeight: canvasSize ,
         canvasWidth: canvasSize,
         squareSize: squareSize,
         rows: rows,
@@ -18,6 +18,7 @@ function config(canvas, overrides = {}) {
         seed: seed,
         random: mulberry32(seed),
         vertices: Array(cols+1),
+        mouseRadius: 5,
         renderer: new CanvasRenderer(canvas),
         waves: [
             { amp: 1.0, freq: 1.0, phase: 0.0 },
@@ -47,7 +48,7 @@ function update(config, metadata) {
     drawSurface(renderer, config);
     drawVertices(renderer, config);
     if (isValue(metadata.mouse) && metadata.mouse.present) {
-        drawMouse(renderer, metadata.mouse.x, metadata.mouse.y);
+        drawMouse(renderer, config, metadata);
     }
 }
 
@@ -55,11 +56,12 @@ function isValue(x) {
     return x !== undefined &&x !== null;
 }
 
-function drawMouse(renderer, x, y) {
+function drawMouse(renderer, config, metadata) {
+    const { mouse } = metadata;
     renderer.drawCircle({
-        x: x, y: y,
-        radius: 2,
-        color: hex({r:255,g:127}),
+        x: mouse.x, y: mouse.y,
+        radius: config.mouseRadius,
+        color: mouse.clicked ? 'blue' : 'red',
     });
 }
 
@@ -443,6 +445,7 @@ function main({ config, setup, update }) {
     const canvas = document.getElementById("id_canvas");
     let misc = {
         mouse: { present: false, x: 0, y: 0 },
+        click: false,
     };
 
     canvas.addEventListener('mousemove', function(e) {
@@ -452,6 +455,16 @@ function main({ config, setup, update }) {
 
     canvas.addEventListener('mouseleave', function(e) {
         const mouse = { present: false };
+        misc = { ...misc, mouse };
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+        const mouse = { ...misc.mouse, clicked: false };
+        misc = { ...misc, mouse };
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+        const mouse = { ...misc.mouse, clicked: true };
         misc = { ...misc, mouse };
     });
 
