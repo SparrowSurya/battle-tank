@@ -20,9 +20,9 @@ function config(canvas, overrides = {}) {
         vertices: Array(cols+1),
         renderer: new CanvasRenderer(canvas),
         waves: [
-            { amp: 20.0, freq: 1.0, phase: 0.0 },
-            // { amp: 15, freq: 0.5, phase: 1.0 },
-            // { amp: -0.2, freq: 3.8, phase: 4.2 },
+            { amp: 1.0, freq: 1.0, phase: 0.0 },
+            { amp: 1, freq: 0.5, phase: 1.0 },
+            { amp: -0.2, freq: 3.8, phase: 4.2 },
         ],
     };
 }
@@ -56,27 +56,23 @@ function drawMouse() {
 function populateVertices(config) {
     const ground = Math.floor(config.rows / 1.6);
     config.vertices.length = 0;
-    for (let r=0; r<=config.rows; r++) {
-        const isAir = r < ground;
-        const row = Array(config.cols+1).fill(isAir ? 0.0 : 1.0);
-        config.vertices.push(row);
-    }
 
-    const dys = sampleWaves(config.waves, config.cols+1, 0, Math.PI/8, 15);
-    console.log(dys);
-    for (let x=0; x<=config.cols; x++) {
-        const dy = dys[x];
-        const value = dy >= 0 ? 1.0 : 0.0;
-        for (let i=Math.min(dy, 0); i<=Math.max(dy, 0); i++) {
-            config.vertices[ground+i][x] = value;
+    const dys = sampleWaves(config.waves, config.cols + 1, 0, Math.PI / 8);
+
+    for (let r = 0; r <= config.rows; r++) {
+        const row = Array(config.cols + 1);
+        for (let x = 0; x <= config.cols; x++) {
+            const terrain_y = ground + dys[x];
+            row[x] = r >= terrain_y ? 1.0 : 0.0;
         }
+        config.vertices.push(row);
     }
 }
 
-function sampleWaves(waves, length, start, step, dy) {
+function sampleWaves(waves, length, start, step) {
     const points = [];
 
-    for (let x=0; x<length; x++) {
+    for (let x = 0; x < length; x++) {
         let res = 0;
         for (let wave of waves) {
             const dx = start + step * x;
