@@ -17,8 +17,8 @@ function createState(canvas, overrides = {}) {
             square: square,
             rows: rows,
             cols: cols,
-            toRow: (y) => Math.floor(y / rows) * square,
-            toCol: (x) => Math.floor(x / cols) * square,
+            toRow: (y) => Math.floor(y / square),
+            toCol: (x) => Math.floor(x / square),
             background: rgba(),
         },
         terrain: {
@@ -150,24 +150,25 @@ function drawVertices(renderer, state) {
 }
 
 function drawSurface(renderer, state) {
-    const { height, cols, square } = state.canvas;
+    const { cols, square } = state.canvas;
     const surface = [];
 
-    for (let x=0; x<=cols; x++) {
-        const y = surfaceY(x * square, state) ?? height;
-        surface.push({ x: x * square, y: y+(square/2) });
+    for (let x = 0; x <= cols; x++) {
+        const px = x * square;
+        const py = surfaceY(px, state);
+        surface.push({ x: px, y: py });
     }
 
-    console.log("Surface:", surface);
-    for (let i=0; i<cols; i++) {
+    for (let i = 0; i < cols; i++) {
         const p1 = surface[i];
-        const p2 = surface[i+1];
+        const p2 = surface[i + 1];
         renderer.drawLine({
             x1: p1.x,
             y1: p1.y,
             x2: p2.x,
             y2: p2.y,
             color: 'magenta',
+            thickness: 2,
         });
     }
 }
@@ -701,92 +702,71 @@ function drawTerrain(renderer, state) {
 }
 
 function surfaceY(x, state) {
-    const { rows, square, toCol } = state.canvas;
+    const { rows, cols, square } = state.canvas;
     const { vertices, threshold } = state.terrain;
-    const c = toCol(x);
 
-    for (let r = 0; r < rows; r++) {
-        if (vertices[r][c] >= threshold) {
-            return r * square;
+    const cFloat = x / square;
+    const c1 = Math.floor(Math.max(0, Math.min(cols, cFloat)));
+    const c2 = Math.min(cols, c1 + 1);
+    const lerpX = cFloat - c1;
+
+    const getSurfaceR = (c) => {
+        for (let r = 0; r < rows - 1; r++) {
+            const d1 = vertices[r][c];
+            const d2 = vertices[r + 1][c];
+            if (d1 <= threshold && d2 > threshold) {
+                return r + (threshold - d1) / (d2 - d1);
+            }
         }
-    }
+        return rows;
+    };
+
+    const r1 = getSurfaceR(c1);
+    const r2 = getSurfaceR(c2);
+    const surfaceR = r1 + (r2 - r1) * lerpX;
+
+    return surfaceR * square;
 }
 
 const slope = (x1, y1, x2, y2) => (y2 - y1) / (x2 - x1);
 
-function surfaceSlope(x, state) {
-    const rows = state.canvas.rows + 1;
-    const cols = state.canvas.cols + 1;
-    const threshold = 0;
+function surfaceSlope(col, state) {
+    const { rows, cols } = state.canvas;
+    const { vertices, threshold } = state.terrain;
 
-    let surfaceY;
+    let surfaceR = -1;
     for (let r = 0; r < rows - 1; r++) {
-        if (state.vertices[r][x] == threshold && state.vertices[r + 1][x] > threshold) {
-            const d1 = state.vertices[r][x];
-            const d2 = state.vertices[r + 1][x];
-            surfaceY = r + (threshold - d1) / (d2 - d1);
+        if (vertices[r][col] <= threshold && vertices[r + 1][col] > threshold) {
+            const d1 = vertices[r][col];
+            const d2 = vertices[r + 1][col];
+            surfaceR = r + (threshold - d1) / (d2 - d1);
             break;
         }
     }
 
-    if (surfaceY === -1) { // No surface found, e.g., all air or all ground
-        return { y: null, slope: 0 };
-    }
+    if (surfaceR === -1) return { y: null, slope: 0 };
 
-    // Convert surfaceY to integer for grid access
-    const yFloor = Math.floor(surfaceY);
-    const yCeil = Math.ceil(surfaceY); // Not used currently, but might be useful for more advanced interpolation
+    const rInt = Math.floor(surfaceR);
+    const getD = (r, c) => vertices[Math.min(rows, Math.max(0, r))][Math.min(cols, Math.max(0, c))];
 
-    // Get density values at points around the surface
-    // Handle boundary conditions carefully
-    const getDensity = (r, c) => {
-        if (r < 0 || r >= rows || c < 0 || c >= cols) {
-            return 0.0; // Assume air outside bounds
-        }
-        return state.vertices[r][c];
-    };
+    const gradX = (getD(rInt, col + 1) - getD(rInt, col - 1)) / 2;
+    const gradY = (getD(rInt + 1, col) - getD(rInt - 1, col)) / 2;
 
-    // Use central difference for gradient components
-    // Approx gradient at (x, surfaceY)
-    let gradX, gradY;
-
-    // Calculate gradX
-    if (x > 0 && x < cols - 1) {
-        gradX = (getDensity(yFloor, x + 1) - getDensity(yFloor, x - 1)) / 2;
-    } else if (x === 0) { // Forward difference for left edge
-        gradX = (getDensity(yFloor, x + 1) - getDensity(yFloor, x));
-    } else { // Backward difference for right edge
-        gradX = (getDensity(yFloor, x) - getDensity(yFloor, x - 1));
-    }
-
-    // Calculate gradY
-    if (yFloor > 0 && yFloor < rows - 1) {
-        gradY = (getDensity(yFloor + 1, x) - getDensity(yFloor - 1, x)) / 2;
-    } else if (yFloor === 0) { // Forward difference for top edge
-        gradY = (getDensity(yFloor + 1, x) - getDensity(yFloor, x));
-    } else { // Backward difference for bottom edge
-        gradY = (getDensity(yFloor, x) - getDensity(yFloor - 1, x));
-    }
-
-    // Slope of the contour (dy/dx) = - (dD/dx) / (dD/dy)
-    if (Math.abs(gradY) < 0.0001) { // Avoid division by zero if gradient in y is flat
-        return gradX > 0 ? Infinity : (gradX < 0 ? -Infinity : 0); // Vertical or horizontal line
-    }
-
-    return -gradX / gradY;
+    if (Math.abs(gradY) < 0.0001) return { y: surfaceR, slope: 0 };
+    return { y: surfaceR, slope: -gradX / gradY };
 }
 
 
 function surfaceInfo(x, state) {
     const col = Math.floor(x / state.canvas.square);
-    const surfaceInfo = surfaceSlope(col, state);
+    const info = surfaceSlope(col, state);
 
-    if (surfaceInfo.surfaceY === null) {
+    if (info.y === null) {
         return null;
     }
 
-    const pixelY = surfaceInfo.surfaceY * state.canvas.square;
-    return { pixelY: pixelY, slope: surfaceInfo.slope };
+    const pixelY = info.y * state.canvas.square;
+    return { pixelY: pixelY, slope: info.slope };
 }
 
 
