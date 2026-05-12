@@ -19,3 +19,7 @@ function deepcopy(obj) {
     }
     return objCopy;
 }
+
+const isSome = (x) => x !== undefined && x !== null;
+
+const clamp = (min, max, val) => Math.max(min, Math.min(max, val));

@@ -28,7 +28,7 @@ class CanvasRenderer {
             thickness,
         } = args;
 
-        if (thickness === undefined) {
+        if (!isSome(thickness)) {
             this.ctx.fillStyle = color;
             this.ctx.fillRect(x, y, width, height);
         } else {
@@ -50,7 +50,7 @@ class CanvasRenderer {
 
         this.ctx.beginPath();
         this.ctx.arc(x, y, radius, offset, angle);
-        if (thickness === undefined) {
+        if (!isSome(thickness)) {
             this.ctx.fillStyle = color;
             this.ctx.fill();
         } else {
@@ -83,5 +83,49 @@ class CanvasRenderer {
             this.ctx.stroke();
         }
     }
-}
 
+    drawLinearGradient(args = {}) {
+        const {
+            gx0, gy0,
+            gx1, gy1,
+            colorStops,
+            x, y,
+            width,
+            height,
+        } = args;
+
+        const gradient = this.ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+        for (const stop of colorStops) {
+            gradient.addColorStop(stop.value, stop.color);
+        }
+
+        this.ctx.fillStyle = gradient;
+        this.ctx.fillRect(x, y, width, height);
+    }
+
+    drawText(args = {}) {
+        const {
+            fontFamily = "sans-serif",
+            fontSize = 10,
+            align = "center",
+            baseline = "middle",
+            text,
+            color,
+            thickness,
+            x, y,
+        } = args;
+
+        this.ctx.font = `${fontSize}px ${fontFamily}`;
+        this.ctx.textAlign = align;
+        this.ctx.textBaseline = baseline;
+
+        if (!isSome(thickness)) {
+            this.ctx.fillStyle = color;
+            this.ctx.fillText(text, x, y);
+        } else {
+            this.ctx.lineWidth = thickness;
+            this.ctx.strokeStyle = color;
+            this.ctx.strokeText(text, x, y);
+        }
+    }
+}
