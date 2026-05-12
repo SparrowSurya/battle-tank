@@ -3,7 +3,7 @@
 function createState(canvas, overrides = {}) {
     const {
         canvasSize = 400,
-        square = 10,
+        square = 2,
         seed = 42,
     } = overrides;
 
@@ -39,7 +39,6 @@ function createState(canvas, overrides = {}) {
         },
         maxDigStrength: 0.3,
         tank: {
-            height: 20,
             width: 25,
             color: 'green',
         },
@@ -74,14 +73,11 @@ function update(renderer, state) {
     });
 
     drawTerrain(renderer, state);
-    drawSurface(renderer, state);
-    drawVertices(renderer, state);
 
     if (isSome(events.mouse) && events.mouse.present) {
         drawMouse(renderer, state);
         modifyTerrain(state);
         settleTerrain(state);
-        drawSlope(renderer, state);
     }
 
     drawTank(renderer, state);
@@ -136,13 +132,15 @@ function drawSurfaceDensity(renderer, state) {
 function drawVertices(renderer, state) {
     const { canvas, terrain } = state;
     const radius = Math.min(canvas.rows, canvas.cols) / canvas.square;
+    if (canvas.square < 5) return;
+
     for (let r=0; r<=canvas.rows; r++) {
         for (let c=0; c<=canvas.cols; c++) {
             const ground = terrain.vertices[r][c] > terrain.threshold;
             renderer.drawCircle({
                 x: c * canvas.square,
                 y: r * canvas.square,
-                radius: radius * 0.25,
+                radius: radius * 0.2,
                 color: ground ? 'white' : 'black',
             });
         }
@@ -168,53 +166,20 @@ function drawSurface(renderer, state) {
             x2: p2.x,
             y2: p2.y,
             color: 'magenta',
-            thickness: 2,
+            thickness: 1,
         });
     }
 }
 
-function drawSlope(renderer, state) {
-    const { mouse } = state.events;
-
-    const x1 = mouse.x - state.tank.height / 2;
-    const y1 = surfaceY(x1, state);
-
-    const x2 = mouse.x + state.tank.height / 2;
-    const y2 = surfaceY(x2, state);
-
-    // renderer.drawCircle({
-    //     x: x1, y: y1,
-    //     radius: state.mouse.radius,
-    //     color: mouse.clicked ? 'blue' : 'red',
-    // });
-
-    // renderer.drawCircle({
-    //     x: x2, y: y2,
-    //     radius: state.mouse.radius,
-    //     color: mouse.clicked ? 'blue' : 'red',
-    // });
-
-    // renderer.drawLine({
-    //     x1, y1, x2, y2,
-    //     color: 'green',
-    // });
-}
-
 function drawMouse(renderer, state) {
     const { mouse } = state.events;
-
-    renderer.drawCircle({
-        x: mouse.x, y: mouse.y,
-        radius: state.mouse.radius,
-        color: mouse.clicked ? 'blue' : 'red',
-    });
 
     renderer.drawLine({
         x1: mouse.x,
         y1: 0,
         x2: mouse.x,
         y2: state.canvas.height,
-        color: 'red',
+        color: mouse.clicked ? 'blue' : 'red',
     });
 }
 
@@ -292,80 +257,34 @@ function settleTerrain(state) {
     }
 }
 
-function drawTank(renderer, config) {
+function drawTank(renderer, state) {
+    const { mouse } = state.events;
+    if (!isSome(mouse) || !mouse.present) return;
 
-    // const mouseX = metadata.mouse.x;
-    // const mouseY = metadata.mouse.y;
-    // const leftX = mouseX - config.tankWidth / 2;
-    // const rightX = mouseX + config.tankWidth / 2;
+    const mouseX = mouse.x;
+    const tankWidth = state.tank.width;
 
-    // const surface = surfaceSlope(mouseX, config);
+    const leftX = mouseX - tankWidth / 2;
+    const rightX = mouseX + tankWidth / 2;
 
-    // renderer.drawLine({
-    //     x1: leftX,
-    //     y1: mouseY,
-    //     x2: rightX,
-    //     y2: mouseY,
-    //     thickness: 1,
-    //     color: 'magenta',
-    // });
+    const infos = [];
+    for (let x=leftX; x<=rightX; x++) {
+        infos.push(surfaceInfo(x, state));
+    }
 
-    // if (isSome(surface)) {
-    //     console.log("Surface:", surface);
-    //     renderer.drawCircle({
-    //         x: mouseX,
-    //         y: surface.y * 2,
-    //         radius: 3,
-    //         color: 'green',
-    //     });
-    // }
+    const first = infos[0];
+    const last = infos[infos.length-1];
 
-    // const leftInfo = surfaceInfo(leftX, config);
-    // const rightInfo = surfaceInfo(rightX, config);
-
-    // console.log("Left:", leftInfo);
-    // console.log("Right:", rightInfo);
-
-
-    // if (leftInfo && rightInfo) {
-    //     const tankHeight = config.tankHeight;
-
-    //     // Calculate vector along the base of the tank
-    //     const vBaseX = rightX - leftX;
-    //     const vBaseY = rightInfo.pixelY - leftInfo.pixelY;
-    //     const baseLength = Math.sqrt(vBaseX * vBaseX + vBaseY * vBaseY);
-
-    //     // Calculate normalized vector perpendicular to the base (pointing upwards)
-    //     // Need to handle potential division by zero if baseLength is 0 (flat terrain)
-    //     const vUpX = -vBaseY / (baseLength || 1); // Use 1 to avoid division by zero
-    //     const vUpY = vBaseX / (baseLength || 1);
-
-    //     // Scale the perpendicular vector by tankHeight
-    //     const scaledUpX = vUpX * tankHeight;
-    //     const scaledUpY = vUpY * tankHeight;
-
-    //     // Define the four corners of the rotated rectangle
-    //     const p1 = { x: leftX, y: leftInfo.pixelY };
-    //     const p2 = { x: rightX, y: rightInfo.pixelY };
-    //     const p3 = { x: rightX + scaledUpX, y: rightInfo.pixelY + scaledUpY };
-    //     const p4 = { x: leftX + scaledUpX, y: leftInfo.pixelY + scaledUpY };
-
-    //     // console.log("Tank points:", p1, p2, p3, p4);
-
-    //     // Draw the rotated tank rectangle
-    //     renderer.drawPolygon({
-    //         points: [p1, p2, p3, p4],
-    //         color: rgba({r:0, g:0, b:255}), // Blue tank
-    //     });
-
-    //     // Optionally, draw a point at the center of the tank base (for reference)
-    //     renderer.drawCircle({
-    //         x: mouseX,
-    //         y: (p1.y + p2.y) / 2, // Center of the base line
-    //         radius: 4,
-    //         color: rgba({r:255, g:165, b:0}), // Orange point
-    //     });
-    // }
+    if (first && last) {
+        renderer.drawLine({
+            x1: leftX,
+            y1: first.y,
+            x2: rightX,
+            y2: last.y,
+            thickness: 1,
+            color: 'red',
+        });
+    }
 }
 
 
@@ -765,8 +684,8 @@ function surfaceInfo(x, state) {
         return null;
     }
 
-    const pixelY = info.y * state.canvas.square;
-    return { pixelY: pixelY, slope: info.slope };
+    const y = info.y * state.canvas.square;
+    return { y, slope: info.slope };
 }
 
 
@@ -780,7 +699,7 @@ function main({ setup, update }) {
     };
 
     canvas.addEventListener('mousemove', function(e) {
-        const mouse = { x: e.offsetX, y: e.offsetY, present: true };
+        const mouse = { ...events.mouse, x: e.offsetX, y: e.offsetY, present: true };
         events = { ...events, mouse };
     });
 
