@@ -25,9 +25,9 @@ function createState(canvas, overrides = {}) {
             threshold: 0.5,
             vertices: Array(cols+1),
             waves: [
-                { amp: 1.0, freq: 1.0, phase: 0.0 },
-                { amp: 1, freq: 0.5, phase: 1.2 },
-                { amp: 0.2, freq: 3.8, phase: 4.2 },
+                { amp: 2.6, freq: 0.6, phase: 0.0 },
+                { amp: 5, freq: 0.3, phase: 1.2 },
+                { amp: 1, freq: 0.8, phase: 4.2 },
             ],
         },
         mouse: {
@@ -89,7 +89,7 @@ function createSurface(state) {
     const { canvas, terrain } = state;
     terrain.vertices.length = 0;
     const gradientSpread = 5;
-    const ground = Math.floor(canvas.rows / 2.5);
+    const ground = Math.floor(canvas.rows / 2);
     const deltaY = sampleWaves(terrain.waves, canvas.cols + 1, 0, Math.PI / 8);
 
     for (let r = 0; r <= canvas.rows; r++) {
@@ -263,26 +263,50 @@ function drawTank(renderer, state) {
 
     const mouseX = mouse.x;
     const tankWidth = state.tank.width;
+    const tankHeight = 12;
 
-    const leftX = mouseX - tankWidth / 2;
-    const rightX = mouseX + tankWidth / 2;
+    const leftX = Math.floor(mouseX - tankWidth / 2);
+    const rightX = Math.floor(mouseX + tankWidth / 2);
 
-    const infos = [];
-    for (let x=leftX; x<=rightX; x++) {
-        infos.push(surfaceInfo(x, state));
+    let sumY = 0;
+    let sumSlope = 0;
+    let count = 0;
+
+    for (let x = leftX; x <= rightX; x++) {
+        const info = surfaceInfo(x, state);
+        if (info && info.y !== null) {
+            sumY += info.y;
+            sumSlope += info.slope;
+            count++;
+        }
     }
 
-    const first = infos[0];
-    const last = infos[infos.length-1];
+    if (count > 0) {
+        const avgY = sumY / count;
+        const avgSlope = sumSlope / count;
+        const angle = Math.atan(avgSlope);
 
-    if (first && last) {
-        renderer.drawLine({
-            x1: leftX,
-            y1: first.y,
-            x2: rightX,
-            y2: last.y,
-            thickness: 1,
-            color: 'red',
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+
+        const hw = tankWidth / 2;
+        const h = tankHeight;
+
+        const corners = [
+            { x: -hw, y: 0 },
+            { x: hw, y: 0 },
+            { x: hw, y: -h },
+            { x: -hw, y: -h }
+        ];
+
+        const points = corners.map(p => ({
+            x: mouseX + (p.x * cos - p.y * sin),
+            y: avgY + (p.x * sin + p.y * cos)
+        }));
+
+        renderer.drawPolygon({
+            points: points,
+            color: state.tank.color || 'blue',
         });
     }
 }
