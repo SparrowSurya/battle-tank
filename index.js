@@ -31,7 +31,7 @@ function createState(canvas, overrides = {}) {
             ],
         },
         mouse: {
-            radius: 5,
+            radius: 3,
         },
         random: {
             seed: seed,
@@ -73,8 +73,8 @@ function update(renderer, state) {
         color: state.canvas.background,
     });
 
+    drawTerrain(renderer, state);
     drawSurface(renderer, state);
-    drawEdge(renderer, state);
     drawVertices(renderer, state);
 
     if (isSome(events.mouse) && events.mouse.present) {
@@ -105,7 +105,6 @@ function createSurface(state) {
         }
         terrain.vertices.push(row);
     }
-    console.log("Vertices:", terrain.vertices);
 }
 
 function drawSurfaceDensity(renderer, state) {
@@ -139,26 +138,28 @@ function drawVertices(renderer, state) {
     const radius = Math.min(canvas.rows, canvas.cols) / canvas.square;
     for (let r=0; r<=canvas.rows; r++) {
         for (let c=0; c<=canvas.cols; c++) {
-            const value = terrain.vertices[r][c];
+            const ground = terrain.vertices[r][c] > terrain.threshold;
             renderer.drawCircle({
                 x: c * canvas.square,
                 y: r * canvas.square,
                 radius: radius * 0.25,
-                color: value > 0.5 ? 'white' : 'black',
+                color: ground ? 'white' : 'black',
             });
         }
     }
 }
 
-function drawEdge(renderer, state) {
-    const { canvas } = state;
+function drawSurface(renderer, state) {
+    const { height, cols, square } = state.canvas;
     const surface = [];
-    for (let x=0; x<=canvas.cols; x++) {
-        const y = surfaceY(x * canvas.square, state) ?? canvas.height;
-        surface.push({ x: x * canvas.square, y: y+(canvas.square/2) });
+
+    for (let x=0; x<=cols; x++) {
+        const y = surfaceY(x * square, state) ?? height;
+        surface.push({ x: x * square, y: y+(square/2) });
     }
 
-    for (let i=0; i<canvas.cols; i++) {
+    console.log("Surface:", surface);
+    for (let i=0; i<cols; i++) {
         const p1 = surface[i];
         const p2 = surface[i+1];
         renderer.drawLine({
@@ -180,16 +181,17 @@ function drawSlope(renderer, state) {
     const x2 = mouse.x + state.tank.height / 2;
     const y2 = surfaceY(x2, state);
 
-    renderer.drawCircle({
-        x: x1, y: y1,
-        radius: state.mouse.radius,
-        color: mouse.clicked ? 'blue' : 'red',
-    });
-    renderer.drawCircle({
-        x: x2, y: y2,
-        radius: state.mouse.radius,
-        color: mouse.clicked ? 'blue' : 'red',
-    });
+    // renderer.drawCircle({
+    //     x: x1, y: y1,
+    //     radius: state.mouse.radius,
+    //     color: mouse.clicked ? 'blue' : 'red',
+    // });
+
+    // renderer.drawCircle({
+    //     x: x2, y: y2,
+    //     radius: state.mouse.radius,
+    //     color: mouse.clicked ? 'blue' : 'red',
+    // });
 
     // renderer.drawLine({
     //     x1, y1, x2, y2,
@@ -202,7 +204,7 @@ function drawMouse(renderer, state) {
 
     renderer.drawCircle({
         x: mouse.x, y: mouse.y,
-        radius: state.mouseRadius,
+        radius: state.mouse.radius,
         color: mouse.clicked ? 'blue' : 'red',
     });
 
@@ -210,7 +212,7 @@ function drawMouse(renderer, state) {
         x1: mouse.x,
         y1: 0,
         x2: mouse.x,
-        y2: state.canvasHeight,
+        y2: state.canvas.height,
         color: 'red',
     });
 }
@@ -366,7 +368,7 @@ function drawTank(renderer, config) {
 }
 
 
-function drawSurface(renderer, state) {
+function drawTerrain(renderer, state) {
     const { rows, cols, square } = state.canvas;
     const { vertices, threshold } = state.terrain;
     const strokeColor = 'magenta';
@@ -699,9 +701,9 @@ function drawSurface(renderer, state) {
 }
 
 function surfaceY(x, state) {
-    const { rows, cols, square } = state.canvas;
+    const { rows, square, toCol } = state.canvas;
     const { vertices, threshold } = state.terrain;
-    const c = Math.floor(x / cols) * square;
+    const c = toCol(x);
 
     for (let r = 0; r < rows; r++) {
         if (vertices[r][c] >= threshold) {
