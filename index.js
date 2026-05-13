@@ -1,5 +1,14 @@
 
 
+function createWaves() {
+    return [
+        { amp: 35.0, freq: 0.05, phase: 0.0 },
+        { amp: 15.0, freq: 0.12, phase: 1.5 },
+        { amp:  5.0, freq: 0.25, phase: 3.2 },
+    ];
+}
+
+
 function createState(canvas, overrides = {}) {
     const {
         canvasSize = 400,
@@ -24,11 +33,7 @@ function createState(canvas, overrides = {}) {
         terrain: {
             threshold: 0.5,
             vertices: Array(cols+1),
-            waves: [
-                { amp: 2.6, freq: 0.6, phase: 0.0 },
-                { amp: 5, freq: 0.3, phase: 1.2 },
-                { amp: 1, freq: 0.8, phase: 4.2 },
-            ],
+            waves: createWaves(),
         },
         mouse: {
             radius: 3,
@@ -282,7 +287,7 @@ function drawTank(renderer, state) {
     }
 
     if (count > 0) {
-        const avgY = sumY / count;
+        const avgY = (sumY / count) + 1;
         const avgSlope = sumSlope / count;
         const angle = Math.atan(avgSlope);
 
