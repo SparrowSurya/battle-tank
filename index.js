@@ -58,8 +58,10 @@ function createState({ squnit = 2, seed = 42 } = {}) {
         },
         maxDigStrength: 0.3,
         tank: {
+            x: 20,
             width: 25,
-            color: Color.fromName('green'),
+            speed: new Vec2(3, 2),
+            color: Color.fromHex('#556B2F'),
         },
     };
 }
@@ -89,6 +91,7 @@ function update(renderer, state) {
         settleTerrain(state);
     }
     drawTank(renderer, state);
+    moveTank(state);
 
     return state;
 }
@@ -245,15 +248,12 @@ function settleTerrain(state) {
 }
 
 function drawTank(renderer, state) {
-    const { mouse } = state.events;
-    if (!isSome(mouse) || !mouse.present) return;
-
-    const mouseX = mouse.x;
+    const tankX = state.tank.x;;
     const tankWidth = state.tank.width;
-    const tankHeight = 12;
+    const tankHeight = 16;
 
-    const leftX = Math.floor(mouseX - tankWidth / 2);
-    const rightX = Math.floor(mouseX + tankWidth / 2);
+    const leftX = Math.floor(tankX - tankWidth / 2);
+    const rightX = Math.floor(tankX + tankWidth / 2);
 
     let sumY = 0;
     let sumSlope = 0;
@@ -287,7 +287,7 @@ function drawTank(renderer, state) {
         ];
 
         const points = corners.map(p => new Vec2(
-            mouseX + (p.x * cos - p.y * sin),
+            tankX + (p.x * cos - p.y * sin),
             avgY + (p.x * sin + p.y * cos)
         ));
 
@@ -295,6 +295,21 @@ function drawTank(renderer, state) {
     }
 }
 
+function moveTank(state) {
+    const { keyboard } = state.events;
+    const size = state.canvas.size;
+    const tank = state.tank;
+
+    if (!isSome(keyboard.key)) return;
+
+    const isLeft = keyboard.key == 'ArrowLeft';
+    const isRight = keyboard.key == 'ArrowRight';
+
+    // TODO: Speed of tank should depend relative to  slope and x component. Currently
+    // the tank is moving fast on slopes.
+    let newX = isLeft ? tank.x - tank.speed.x : (isRight ? tank.x + tank.speed.x : tank.x);
+    state.tank.x = clamp(newX, tank.width, size.width - tank.width);
+}
 
 function drawTerrain(renderer, state) {
     const { grid, squnit } = state.canvas;
@@ -418,9 +433,27 @@ function main({ setup, update }) {
     const renderer = new CanvasRenderer(canvas);
 
     let events = {
-        mouse: { present: false, x: 0, y: 0 },
+        keyboard: {
+            key: null,
+            repeat: null,
+        },
+        mouse: {
+            x: 0,
+            y: 0,
+            present: false,
+        },
         click: false,
     };
+
+    window.addEventListener('keydown', function(e) {
+        const keyboard = { key: e.key, repeat: e.repeat };
+        events = { ...events, keyboard };
+    });
+
+    window.addEventListener('keyup', function(e) {
+        const keyboard = { key: null, repeat: null };
+        events = { ...events, keyboard };
+    });
 
     canvas.addEventListener('mousemove', function(e) {
         const mouse = { ...events.mouse, x: e.offsetX, y: e.offsetY, present: true };
