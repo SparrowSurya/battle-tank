@@ -63,9 +63,14 @@ function createState({ squnit = 2, seed = 42 } = {}) {
             width: 25,
             velocity: new Vec2(80, 30),
             color: Color.fromHex('#556B2F'),
+            maxPower: 60,
+            trigger: {
+                power: 0,
+            },
+            ammo: null,
         },
         env: {
-            gravity: 9.8,
+            gravity: 98,
         },
         debug: {
             strokeColor: Color.fromHex("#D67FA1"),
@@ -94,11 +99,17 @@ function update(renderer, state) {
     if (state.canvas.squnit >= 5) drawVertices(renderer, state);
     if (isSome(events.mouse) && events.mouse.present) {
         // drawMouse(renderer, state);
-        modifyTerrain(state);
+        // modifyTerrain(state);
         settleTerrain(state);
     }
-    drawTank(renderer, state);
     moveTank(state);
+    drawTank(renderer, state);
+    aimTank(renderer, state);
+    drawProjectilePath(renderer, state);
+    if (state.tank.ammo !== null) {
+        drawProjectile(renderer, state);
+        moveProjectile(state);
+    }
 
     return state;
 }
@@ -299,40 +310,91 @@ function drawTank(renderer, state) {
         ));
 
         renderer.drawPolygon(points, tank.color);
-        drawProjectilePath(renderer, state);
     }
 }
 
 function drawProjectilePath(renderer, state) {
+    const mouse = state.events.mouse;
+    if (!isSome(mouse) || !mouse.present) return;
+
     const tank = state.tank;
     const info = surfaceInfo(tank.x, state);
     if (info === null) return;
 
     const pos = new Vec2(tank.x, info.y);
-    const mouse = state.events.mouse;
-    if (!isSome(mouse) || !mouse.present) return;
 
     const canvasSize = state.canvas.size;
-    const v = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
-    const initialVel = Vec2.all(v.length());
+    const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
     const g = state.env.gravity;
     const points = [pos];
-    let oldVel = v.normalise().mul(initialVel);
+    let oldVel = vel.normalise().mul(tank.trigger.power);
 
     for (let i=0; i<250; i++) {
         const oldPos = points[points.length-1];
 
-        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, state.dt*16);
+        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, state.dt);
 
-        if (
-            (newPos.y > canvasSize.height)
-            || !inRange(newPos.x, 0, canvasSize.width)
-        ) break;
+        if ((newPos.y > canvasSize.height) || !inRange(newPos.x, 0, canvasSize.width)) break;
 
         points.push(newPos);
         oldVel = newVel;
     }
-    renderer.drawPolygon(points, 'purple', 2, false);
+
+    renderer.drawPolygon(points, Color.fromName('orange').withAlpha(0.5), 2, false);
+}
+
+function aimTank(renderer, state) {
+    const mouse = state.events.mouse;
+    const tank = state.tank;
+    const info = surfaceInfo(tank.x, state);
+
+    if (info == null || tank.ammo !== null) return;
+    if (mouse.clicked !== true) {
+        if (tank.trigger.power <= 0) return;
+
+        const power = tank.trigger.power;
+        state.tank.trigger.power = 0;
+
+        const pos = new Vec2(tank.x, info.y);
+        const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y).normalise().mul(power*10);
+
+        state.tank.ammo = { pos, vel };
+        return;
+    }
+
+    state.tank.trigger.power += 60 * state.dt;
+
+    const pos = new Vec2(10, 10);
+    const size = new Vec2(60, 8);
+
+    const rect = new Rect(pos.x, pos.y, size.width, size.height);
+    const progress = clamp(tank.trigger.power / tank.maxPower, 0, 1);
+    const newRect = rect.copyWith({ width: progress * size.width });
+
+    renderer.drawRect(rect, 'black', 4);
+    renderer.drawRect(rect, 'black');
+    renderer.drawRect(newRect, 'white');
+}
+
+function drawProjectile(renderer, state) {
+    const ball = state.tank.ammo;
+    if (ball == null) return;
+
+    renderer.drawCircle(ball.pos, 5, Color.fromName('black'));
+}
+
+function moveProjectile(state) {
+    const ball = state.tank.ammo;
+    if (ball == null) return;
+
+    const { pos, vel } = updateProjectile(ball.pos, ball.vel, state.env.gravity, state.dt);
+    state.tank.ammo = { pos, vel };
+
+    const canvasSize = state.canvas.size;
+    if ((pos.y > canvasSize.height) || !inRange(pos.x, 0, canvasSize.width)) {
+        state.tank.ammo = null;
+        return;
+    }
 }
 
 function moveTank(state) {

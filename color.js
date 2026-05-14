@@ -62,6 +62,10 @@ class Color {
         );
     }
 
+    withAlpha(a) {
+        return new Color(this.r, this.g, this.b, a);
+    }
+
     toRGBAString() {
         return `rgba(${Math.round(this.r)}, ${Math.round(this.g)}, ${Math.round(this.b)}, ${this.a})`;
     }

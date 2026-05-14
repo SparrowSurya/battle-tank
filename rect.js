@@ -55,8 +55,8 @@ class Rect {
                this.top < other.bottom && this.bottom > other.top;
     }
 
-    copy() {
-        return new Rect(this.x, this.y, this.w, this.h);
+    copyWith({ x, y, width, height }) {
+        return new Rect(x ?? this.x, y ?? this.y, width ?? this.w, height ?? this.h);
     }
 
     move(v) {
