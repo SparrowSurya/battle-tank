@@ -31,7 +31,9 @@ function createWaves(seed, options = {}) {
     return waves;
 }
 
-function createState(canvas, { squnit = 2, seed = 42 } = {}) {
+function createState(canvas) {
+    const seed = Date.now();
+    const squnit = 2;
     const canvasSize = new Vec2(canvas.width, canvas.height);
     const canvasGrid = {
         rows: Math.floor(canvasSize.y / squnit),
@@ -70,9 +72,12 @@ function createState(canvas, { squnit = 2, seed = 42 } = {}) {
             width: 25,
             velocity: new Vec2(80, 30),
             color: Color.fromHex('#556B2F'),
-            maxPower: 60,
+            minPower: 10,
+            maxPower: 100,
+            face: 1, // 1 for right, -1 for left
             trigger: {
                 power: 0,
+                aimStart: null,
             },
             ammo: null,
         },
@@ -188,7 +193,7 @@ function drawSurface(renderer, state) {
         points.push(new Vec2(px, py));
     }
 
-    renderer.drawPolygon(points, state.terrain.surfaceColor, 3, false);
+    renderer.drawPolygon(points, state.terrain.surfaceColor, 4, false);
 }
 
 function drawMouse(renderer, state) {
@@ -322,37 +327,38 @@ function drawTank(renderer, state) {
 
 function drawProjectilePath(renderer, state) {
     const mouse = state.events.mouse;
-    if (!isSome(mouse) || !mouse.present) return;
-
     const tank = state.tank;
+    if (!isSome(mouse) || !mouse.present || !tank.trigger.aimStart) return;
+
     const info = surfaceInfo(tank.x, state);
     if (info === null) return;
 
     const nozzleOffset = 10;
-    const angle = Math.atan(info.slope);
-    const pos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
+    const nozzleAngle = Math.atan(info.slope);
+    const pos = new Vec2(tank.x + nozzleOffset * Math.sin(nozzleAngle), info.y - nozzleOffset * Math.cos(nozzleAngle));
+
+    const drag = new Vec2(mouse.x - tank.trigger.aimStart.x, mouse.y - tank.trigger.aimStart.y);
+    const power = clamp(drag.length(), tank.minPower, tank.maxPower);
+    const vel = drag.normalise().mul(power * 10);
 
     const canvasSize = state.canvas.size;
-    const dir = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
     const g = state.env.gravity;
     const points = [pos];
-
-    let oldVel = dir.normalise().mul(tank.trigger.power * 10);
     const stepDt = 0.05;
 
+    let currentVel = vel;
     for (let i = 0; i < 200; i++) {
         const oldPos = points[points.length - 1];
-        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, stepDt);
+        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, currentVel, g, stepDt);
 
         if (newPos.y > canvasSize.y || !inRange(newPos.x, 0, canvasSize.x)) break;
-
         if (newPos.y > surfaceY(newPos.x, state)) {
             points.push(newPos);
             break;
         }
 
         points.push(newPos);
-        oldVel = newVel;
+        currentVel = newVel;
     }
 
     renderer.drawPolygon(points, Color.fromName('orange').withValue({ a: 0.5 }), 2, false);
@@ -362,41 +368,48 @@ function aimTank(renderer, state) {
     const mouse = state.events.mouse;
     const tank = state.tank;
     const info = surfaceInfo(tank.x, state);
+    if (info === null) return;
 
     const nozzleOffset = 10;
-    if (info !== null) {
-        const angle = Math.atan(info.slope);
-        const nozzlePos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
-        const nozzleDir = new Vec2(mouse.x - nozzlePos.x, mouse.y - nozzlePos.y).normalise();
-        renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), 'black' ?? tank.color, 4);
+    const slopeAngle = Math.atan(info.slope);
+    const nozzlePos = new Vec2(tank.x + nozzleOffset * Math.sin(slopeAngle), info.y - nozzleOffset * Math.cos(slopeAngle));
+
+    // Handle slingshot aiming logic
+    if (mouse.clicked === true) {
+        if (!tank.trigger.aimStart) {
+            state.tank.trigger.aimStart = new Vec2(mouse.x, mouse.y);
+        }
+
+        const drag = new Vec2(mouse.x - tank.trigger.aimStart.x, mouse.y - tank.trigger.aimStart.y);
+        const dragLength = drag.length();
+        state.tank.trigger.power = clamp(dragLength, tank.minPower, tank.maxPower);
+
+        // Draw nozzle pointing in drag direction
+        const nozzleDir = dragLength > 0 ? drag.normalise() : new Vec2(tank.face, 0);
+        renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), tank.color, 4);
+
+        // Visual feedback for drag (slingshot line)
+        renderer.drawLine(tank.trigger.aimStart, new Vec2(mouse.x, mouse.y), Color.fromName('rgba(255, 255, 255, 0.3)'), 1);
+    } else {
+        // Not clicking - check if we just released to fire
+        if (tank.trigger.aimStart) {
+            const drag = new Vec2(mouse.x - tank.trigger.aimStart.x, mouse.y - tank.trigger.aimStart.y);
+            const power = clamp(drag.length(), tank.minPower, tank.maxPower);
+            const vel = drag.normalise().mul(power * 10);
+
+            if (tank.ammo === null) {
+                state.tank.ammo = { pos: nozzlePos, vel: vel };
+            }
+
+            state.tank.trigger.aimStart = null;
+            state.tank.trigger.power = 0;
+        }
+
+        // Default nozzle position (parallel to surface, facing tank direction)
+        const defaultAngle = slopeAngle + (tank.face === -1 ? Math.PI : 0);
+        const nozzleDir = new Vec2(Math.cos(defaultAngle), Math.sin(defaultAngle));
+        renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), tank.color, 4);
     }
-
-    if (info == null || tank.ammo !== null) return;
-    if (mouse.clicked !== true) {
-        if (tank.trigger.power <= 0) return;
-
-        const power = tank.trigger.power;
-        state.tank.trigger.power = 0;
-
-        const angle = Math.atan(info.slope);
-        const pos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
-        const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y).normalise().mul(power * 10);
-
-        state.tank.ammo = { pos, vel };
-        return;
-    }
-
-    state.tank.trigger.power = Math.min(state.tank.maxPower, state.tank.trigger.power + 60 * state.dt);
-
-    const pos = new Vec2(10, 10);
-    const size = new Vec2(60, 8);
-
-    const rect = new Rect(pos.x, pos.y, size.x, size.y);
-    const progress = clamp(tank.trigger.power / tank.maxPower, 0, 1);
-    const powerRect = new Rect(rect.x, rect.y, progress * size.x, rect.h);
-
-    renderer.drawRect(rect, Color.fromName('black'), 2);
-    renderer.drawRect(powerRect, Color.fromName('white'));
 }
 
 function drawProjectile(renderer, state) {
@@ -429,6 +442,9 @@ function moveTank(state) {
 
     const isLeft = keyboard.key == 'ArrowLeft';
     const isRight = keyboard.key == 'ArrowRight';
+
+    if (isLeft) state.tank.face = -1;
+    if (isRight) state.tank.face = 1;
 
     // TODO: Speed of tank should depend relative to slope and x component. Currently
     // the tank is moving fast on slopes.
