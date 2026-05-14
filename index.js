@@ -32,7 +32,7 @@ function createWaves(seed, options = {}) {
 }
 
 function createState({ squnit = 2, seed = 42 } = {}) {
-    const canvasSize = new Vec2(1200, 800);
+    const canvasSize = new Vec2(600, 400);
     const canvasGrid = canvasSize.div(Vec2.all(squnit));
 
     return {
@@ -58,11 +58,18 @@ function createState({ squnit = 2, seed = 42 } = {}) {
         },
         maxDigStrength: 0.3,
         tank: {
-            x: 20,
+            minMuzzleVelcity: Vec2.all(10),
+            x: canvasSize.width / 2,
             width: 25,
-            speed: new Vec2(3, 2),
+            velocity: new Vec2(80, 30),
             color: Color.fromHex('#556B2F'),
         },
+        env: {
+            gravity: 9.8,
+        },
+        debug: {
+            strokeColor: Color.fromHex("#D67FA1"),
+        }
     };
 }
 
@@ -86,7 +93,7 @@ function update(renderer, state) {
     drawSurface(renderer, state);
     if (state.canvas.squnit >= 5) drawVertices(renderer, state);
     if (isSome(events.mouse) && events.mouse.present) {
-        drawMouse(renderer, state);
+        // drawMouse(renderer, state);
         modifyTerrain(state);
         settleTerrain(state);
     }
@@ -108,7 +115,7 @@ function generateTerrain(state) {
         for (let c = 0; c <= grid.cols; c++) {
             const terrain_y = ground + deltaY[c];
             let density = (r - terrain_y + 0.5) / gradientSpread;
-            row[c] = clamp(0.0, 1.0, density);
+            row[c] = clamp(density, 0.0, 1.0);
         }
         terrain.vertices.push(row);
     }
@@ -248,12 +255,12 @@ function settleTerrain(state) {
 }
 
 function drawTank(renderer, state) {
-    const tankX = state.tank.x;;
+    const tank = state.tank;
     const tankWidth = state.tank.width;
     const tankHeight = 16;
 
-    const leftX = Math.floor(tankX - tankWidth / 2);
-    const rightX = Math.floor(tankX + tankWidth / 2);
+    const leftX = Math.floor(tank.x - tankWidth / 2);
+    const rightX = Math.floor(tank.x + tankWidth / 2);
 
     let sumY = 0;
     let sumSlope = 0;
@@ -287,12 +294,45 @@ function drawTank(renderer, state) {
         ];
 
         const points = corners.map(p => new Vec2(
-            tankX + (p.x * cos - p.y * sin),
+            tank.x + (p.x * cos - p.y * sin),
             avgY + (p.x * sin + p.y * cos)
         ));
 
-        renderer.drawPolygon(points, state.tank.color || Color.fromName('blue'));
+        renderer.drawPolygon(points, tank.color);
+        drawProjectilePath(renderer, state);
     }
+}
+
+function drawProjectilePath(renderer, state) {
+    const tank = state.tank;
+    const info = surfaceInfo(tank.x, state);
+    if (info === null) return;
+
+    const pos = new Vec2(tank.x, info.y);
+    const mouse = state.events.mouse;
+    if (!isSome(mouse) || !mouse.present) return;
+
+    const canvasSize = state.canvas.size;
+    const v = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
+    const initialVel = Vec2.all(v.length());
+    const g = state.env.gravity;
+    const points = [pos];
+    let oldVel = v.normalise().mul(initialVel);
+
+    for (let i=0; i<250; i++) {
+        const oldPos = points[points.length-1];
+
+        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, state.dt*16);
+
+        if (
+            (newPos.y > canvasSize.height)
+            || !inRange(newPos.x, 0, canvasSize.width)
+        ) break;
+
+        points.push(newPos);
+        oldVel = newVel;
+    }
+    renderer.drawPolygon(points, 'purple', 2, false);
 }
 
 function moveTank(state) {
@@ -305,10 +345,11 @@ function moveTank(state) {
     const isLeft = keyboard.key == 'ArrowLeft';
     const isRight = keyboard.key == 'ArrowRight';
 
-    // TODO: Speed of tank should depend relative to  slope and x component. Currently
+    // TODO: Speed of tank should depend relative to slope and x component. Currently
     // the tank is moving fast on slopes.
-    let newX = isLeft ? tank.x - tank.speed.x : (isRight ? tank.x + tank.speed.x : tank.x);
-    state.tank.x = clamp(newX, tank.width, size.width - tank.width);
+    const vel = tank.velocity.mul(state.dt).neg();
+    let newX = isLeft ? tank.x - vel.x : (isRight ? tank.x + vel.x : tank.x);
+    state.tank.x = clamp(newX, tank.width/2, size.width);
 }
 
 function drawTerrain(renderer, state) {
@@ -476,13 +517,16 @@ function main({ setup, update }) {
     });
 
     let state = setup(canvas);
+    let lastMillis = 0;
 
-    function animate() {
-        state = update(renderer, { ...state, events: deepcopy(events) });
+    function animate(currMillis) {
+        const dt = (currMillis - lastMillis) / 1000;
+        state = update(renderer, { ...state, events: deepcopy(events), dt });
         requestAnimationFrame(animate);
+        lastMillis = currMillis;
     }
 
-    animate();
+    animate(lastMillis);
 }
 
 /// Entry Point of Program.

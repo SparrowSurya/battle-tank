@@ -66,6 +66,10 @@ class Vec2 {
         return new Vec2(this.x, this.y);
     }
 
+    neg() {
+        return new Vec2(-this.x, -this.y);
+    }
+
     distance(v) {
         return this.sub(v).length();
     }
