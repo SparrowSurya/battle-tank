@@ -25,7 +25,10 @@ const slope = (x1, y1, x2, y2) => (y2 - y1) / (x2 - x1);
 
 const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 const lerp = (a, b, t) => a + (b - a) * t;
-const avg = (values) => values.length == 0 ? 0 :  values.reduce((prev, curr, i, arr)) / values.length;
+const avg = (...values) => {
+    const arr = values.flat();
+    return arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length;
+};
 
 const inRange = (val, min, max) => min <= val && val < max;
 

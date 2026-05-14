@@ -31,9 +31,12 @@ function createWaves(seed, options = {}) {
     return waves;
 }
 
-function createState({ squnit = 2, seed = 42 } = {}) {
-    const canvasSize = new Vec2(600, 400);
-    const canvasGrid = canvasSize.div(Vec2.all(squnit));
+function createState(canvas, { squnit = 2, seed = 42 } = {}) {
+    const canvasSize = new Vec2(canvas.width, canvas.height);
+    const canvasGrid = {
+        rows: Math.floor(canvasSize.y / squnit),
+        cols: Math.floor(canvasSize.x / squnit)
+    };
 
     return {
         canvas: {
@@ -44,17 +47,21 @@ function createState({ squnit = 2, seed = 42 } = {}) {
         },
         terrain: {
             threshold: 0.5,
-            vertices: Array(canvasGrid.cols+1),
-            waves: createWaves(Date.now()),
+            vertices: Array(canvasGrid.cols + 1),
+            waves: createWaves(seed),
             surfaceColor: Color.fromHex("#6B8E23"),
             color: Color.fromHex("#6B8E23"),
         },
         pointer: {
             radius: 12,
         },
+        events: {
+            mouse: { present: false },
+            keyboard: {}
+        },
         random: {
             seed: seed,
-            random: mulberry32(),
+            random: mulberry32(seed),
         },
         maxDigStrength: 0.3,
         tank: {
@@ -70,7 +77,7 @@ function createState({ squnit = 2, seed = 42 } = {}) {
             ammo: null,
         },
         env: {
-            gravity: 98,
+            gravity: 250,
         },
         debug: {
             strokeColor: Color.fromHex("#D67FA1"),
@@ -147,8 +154,8 @@ function drawSurfaceDensity(renderer, state) {
                 new Vec2((c + 0) * squnit, (r + 0) * squnit),
                 new Vec2((c + 0) * squnit, (r + 1) * squnit),
                 [
-                    { value: 0.0, color: Color(0, 0, 0, a0) },
-                    { value: 1.0, color: Color(0, 0, 0, a1) },
+                    { value: 0.0, color: new Color(0, 0, 0, a0) },
+                    { value: 1.0, color: new Color(0, 0, 0, a1) },
                 ],
             );
         }
@@ -324,23 +331,31 @@ function drawProjectilePath(renderer, state) {
     const pos = new Vec2(tank.x, info.y);
 
     const canvasSize = state.canvas.size;
-    const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
+    const dir = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
     const g = state.env.gravity;
     const points = [pos];
-    let oldVel = vel.normalise().mul(tank.trigger.power);
 
-    for (let i=0; i<250; i++) {
-        const oldPos = points[points.length-1];
+    // Fixed multiplier and step for consistent, complete path rendering
+    let oldVel = dir.normalise().mul(tank.trigger.power * 10);
+    const stepDt = 0.05;
 
-        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, state.dt);
+    for (let i = 0; i < 200; i++) {
+        const oldPos = points[points.length - 1];
+        const { pos: newPos, vel: newVel } = updateProjectile(oldPos, oldVel, g, stepDt);
 
-        if ((newPos.y > canvasSize.height) || !inRange(newPos.x, 0, canvasSize.width)) break;
+        if (newPos.y > canvasSize.y || !inRange(newPos.x, 0, canvasSize.x)) break;
+
+        // Stop path at terrain surface
+        if (newPos.y > surfaceY(newPos.x, state)) {
+            points.push(newPos);
+            break;
+        }
 
         points.push(newPos);
         oldVel = newVel;
     }
 
-    renderer.drawPolygon(points, Color.fromName('orange').withAlpha(0.5), 2, false);
+    renderer.drawPolygon(points, Color.fromName('orange').withValue({ a: 0.5 }), 2, false);
 }
 
 function aimTank(renderer, state) {
@@ -356,24 +371,23 @@ function aimTank(renderer, state) {
         state.tank.trigger.power = 0;
 
         const pos = new Vec2(tank.x, info.y);
-        const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y).normalise().mul(power*10);
+        const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y).normalise().mul(power * 10);
 
         state.tank.ammo = { pos, vel };
         return;
     }
 
-    state.tank.trigger.power += 60 * state.dt;
+    state.tank.trigger.power = Math.min(state.tank.maxPower, state.tank.trigger.power + 60 * state.dt);
 
     const pos = new Vec2(10, 10);
     const size = new Vec2(60, 8);
 
-    const rect = new Rect(pos.x, pos.y, size.width, size.height);
+    const rect = new Rect(pos.x, pos.y, size.x, size.y);
     const progress = clamp(tank.trigger.power / tank.maxPower, 0, 1);
-    const newRect = rect.copyWith({ width: progress * size.width });
+    const powerRect = new Rect(rect.x, rect.y, progress * size.x, rect.h);
 
-    renderer.drawRect(rect, 'black', 4);
-    renderer.drawRect(rect, 'black');
-    renderer.drawRect(newRect, 'white');
+    renderer.drawRect(rect, Color.fromName('black'), 2);
+    renderer.drawRect(powerRect, Color.fromName('white'));
 }
 
 function drawProjectile(renderer, state) {

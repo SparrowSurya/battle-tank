@@ -76,9 +76,6 @@ class Vec2 {
 
     normalise() {
         const len = this.length();
-        if (len == 0) {
-            return Vec2.zero();
-        }
-        return this.div(len);
+        return len == 0 ? Vec2.zero() : this.div(len);
     }
 }
