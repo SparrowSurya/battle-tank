@@ -1,28 +1,56 @@
 
 
-function createWaves() {
-    return [
-        { amp: 35.0, freq: 0.05, phase: 0.0 },
-        { amp: 15.0, freq: 0.12, phase: 1.5 },
-        { amp:  5.0, freq: 0.25, phase: 3.2 },
-    ];
+function createWaves(seed, options = {}) {
+    const rand = mulberry32(seed);
+
+    const {
+        waveCount = 3,
+        minAmp = 4,
+        maxAmp = 40,
+        minFreq = 0.02,
+        maxFreq = 0.30,
+        ampFalloff = 0.55,
+        freqGrowth = 1.8,
+    } = options;
+
+    const waves = [];
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    let currentMaxAmp = maxAmp;
+    let currentMinFreq = minFreq;
+
+    for (let i = 0; i < waveCount; i++) {
+        const amp = lerp(minAmp, currentMaxAmp, rand());
+        const freq = lerp(currentMinFreq, maxFreq, rand());
+        const phase = rand() * Math.PI * 2;
+
+        waves.push({ amp, freq, phase });
+
+        currentMaxAmp *= ampFalloff;
+        currentMinFreq *= freqGrowth;
+    }
+
+    return waves;
 }
+
 
 
 function createState(canvas, overrides = {}) {
     const {
-        canvasSize = 400,
         square = 2,
         seed = 42,
     } = overrides;
 
-    const rows = canvasSize / square;
-    const cols = canvasSize / square;
+    const canvasHeight = 400;
+    const canvasWidth = 600;
+
+    const rows = canvasHeight / square;
+    const cols = canvasWidth / square;
 
     return {
         canvas: {
-            height: canvasSize,
-            width: canvasSize,
+            height: canvasHeight,
+            width: canvasWidth,
             square: square,
             rows: rows,
             cols: cols,
@@ -33,14 +61,14 @@ function createState(canvas, overrides = {}) {
         terrain: {
             threshold: 0.5,
             vertices: Array(cols+1),
-            waves: createWaves(),
+            waves: createWaves(Date.now()),
         },
         mouse: {
-            radius: 3,
+            radius: 12,
         },
         random: {
             seed: seed,
-            random: mulberry32(seed),
+            random: mulberry32(),
         },
         maxDigStrength: 0.3,
         tank: {
@@ -186,6 +214,13 @@ function drawMouse(renderer, state) {
         y2: state.canvas.height,
         color: mouse.clicked ? 'blue' : 'red',
     });
+
+    renderer.drawCircle({
+        x: mouse.x,
+        y: mouse.y,
+        radius: state.mouse.radius,
+        color: 'red',
+    })
 }
 
 function sampleWaves(waves, length, start, step) {
