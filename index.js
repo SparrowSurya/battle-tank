@@ -40,12 +40,14 @@ function createState({ squnit = 2, seed = 42 } = {}) {
             size: canvasSize,
             grid: canvasGrid,
             squnit: squnit,
-            background: Color.fromName('cyan'),
+            background: Color.fromHex("#87CEEB"),
         },
         terrain: {
             threshold: 0.5,
             vertices: Array(canvasGrid.cols+1),
             waves: createWaves(Date.now()),
+            surfaceColor: Color.fromHex("#6B8E23"),
+            color: Color.fromHex("#6B8E23"),
         },
         pointer: {
             radius: 12,
@@ -94,7 +96,7 @@ function update(renderer, state) {
 function generateTerrain(state) {
     const { canvas: { grid }, terrain } = state;
     const gradientSpread = 5;
-    const ground = Math.floor(grid.rows / 2);
+    const ground = Math.floor(grid.rows / 1.5);
     const deltaY = sampleWaves(terrain.waves, grid.cols + 1, 0, Math.PI / 8);
 
     terrain.vertices.length = 0;
@@ -158,7 +160,7 @@ function drawSurface(renderer, state) {
         points.push(new Vec2(px, py));
     }
 
-    renderer.drawPolygon(points, Color.fromName('magenta'), 3, false);
+    renderer.drawPolygon(points, state.terrain.surfaceColor, 3, false);
 }
 
 function drawMouse(renderer, state) {
@@ -296,10 +298,10 @@ function drawTank(renderer, state) {
 
 function drawTerrain(renderer, state) {
     const { grid, squnit } = state.canvas;
-    const { vertices, threshold } = state.terrain;
+    const { vertices, threshold, surfaceColor } = state.terrain;
 
-    const strokeColor = Color.fromName('magenta');
-    const fillColor = Color.fromName('black');
+    const strokeColor = surfaceColor;
+    const fillColor = surfaceColor;
     const fill = true;
     const stroke = !fill;
 
