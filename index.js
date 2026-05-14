@@ -328,14 +328,15 @@ function drawProjectilePath(renderer, state) {
     const info = surfaceInfo(tank.x, state);
     if (info === null) return;
 
-    const pos = new Vec2(tank.x, info.y);
+    const nozzleOffset = 10;
+    const angle = Math.atan(info.slope);
+    const pos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
 
     const canvasSize = state.canvas.size;
     const dir = new Vec2(mouse.x - pos.x, mouse.y - pos.y);
     const g = state.env.gravity;
     const points = [pos];
 
-    // Fixed multiplier and step for consistent, complete path rendering
     let oldVel = dir.normalise().mul(tank.trigger.power * 10);
     const stepDt = 0.05;
 
@@ -345,7 +346,6 @@ function drawProjectilePath(renderer, state) {
 
         if (newPos.y > canvasSize.y || !inRange(newPos.x, 0, canvasSize.x)) break;
 
-        // Stop path at terrain surface
         if (newPos.y > surfaceY(newPos.x, state)) {
             points.push(newPos);
             break;
@@ -363,6 +363,14 @@ function aimTank(renderer, state) {
     const tank = state.tank;
     const info = surfaceInfo(tank.x, state);
 
+    const nozzleOffset = 10;
+    if (info !== null) {
+        const angle = Math.atan(info.slope);
+        const nozzlePos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
+        const nozzleDir = new Vec2(mouse.x - nozzlePos.x, mouse.y - nozzlePos.y).normalise();
+        renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), 'black' ?? tank.color, 4);
+    }
+
     if (info == null || tank.ammo !== null) return;
     if (mouse.clicked !== true) {
         if (tank.trigger.power <= 0) return;
@@ -370,7 +378,8 @@ function aimTank(renderer, state) {
         const power = tank.trigger.power;
         state.tank.trigger.power = 0;
 
-        const pos = new Vec2(tank.x, info.y);
+        const angle = Math.atan(info.slope);
+        const pos = new Vec2(tank.x + nozzleOffset * Math.sin(angle), info.y - nozzleOffset * Math.cos(angle));
         const vel = new Vec2(mouse.x - pos.x, mouse.y - pos.y).normalise().mul(power * 10);
 
         state.tank.ammo = { pos, vel };
