@@ -1,16 +1,3 @@
-function rgba(rgba = {}) {
-    const { r = 255, g = 255, b = 255, a = 1.0 } = rgba;
-    return `rgba(${r}, ${g}, ${b}, ${a})`;
-}
-
-function hex(rgb = {}) {
-    let { r = 255, g = 255, b = 255 } = rgb;
-    r = r.toString(16).padStart(2, '0');
-    g = g.toString(16).padStart(2, '0');
-    b = b.toString(16).padStart(2, '0');
-    return `0x${r}${g}${b}`;
-}
-
 class Color {
     constructor(r = 255, g = 255, b = 255, a = 1.0) {
         this.r = Math.max(0, Math.min(255, r));
@@ -78,6 +65,8 @@ class Color {
     toRGBAString() {
         return `rgba(${Math.round(this.r)}, ${Math.round(this.g)}, ${Math.round(this.b)}, ${this.a})`;
     }
+
+    toString() { return this.toRGBAString(); }
 
     toHexString() {
         const r = Math.round(this.r).toString(16).padStart(2, '0');

@@ -36,6 +36,13 @@ class Rect {
         return new Rect(center.x - w / 2, center.y - h / 2, w, h);
     }
 
+    static fromSize(width, height) {
+        if (width instanceof Vec2) {
+            return Rect(0, 0, width.width, width.height);
+        }
+        return Rect(0, 0, width, height);
+    }
+
     contains(point) {
         if (!(point instanceof Vec2)) return false;
         return point.x >= this.left && point.x <= this.right &&

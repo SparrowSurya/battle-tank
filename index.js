@@ -14,8 +14,6 @@ function createWaves(seed, options = {}) {
     } = options;
 
     const waves = [];
-    const lerp = (a, b, t) => a + (b - a) * t;
-
     let currentMaxAmp = maxAmp;
     let currentMinFreq = minFreq;
 
@@ -33,37 +31,23 @@ function createWaves(seed, options = {}) {
     return waves;
 }
 
-
-
-function createState(canvas, overrides = {}) {
-    const {
-        square = 2,
-        seed = 42,
-    } = overrides;
-
-    const canvasHeight = 400;
-    const canvasWidth = 600;
-
-    const rows = canvasHeight / square;
-    const cols = canvasWidth / square;
+function createState({ squnit = 2, seed = 42 } = {}) {
+    const canvasSize = new Vec2(1200, 800);
+    const canvasGrid = canvasSize.div(Vec2.all(squnit));
 
     return {
         canvas: {
-            height: canvasHeight,
-            width: canvasWidth,
-            square: square,
-            rows: rows,
-            cols: cols,
-            toRow: (y) => Math.floor(y / square),
-            toCol: (x) => Math.floor(x / square),
-            background: rgba(),
+            size: canvasSize,
+            grid: canvasGrid,
+            squnit: squnit,
+            background: Color.fromName('cyan'),
         },
         terrain: {
             threshold: 0.5,
-            vertices: Array(cols+1),
+            vertices: Array(canvasGrid.cols+1),
             waves: createWaves(Date.now()),
         },
-        mouse: {
+        pointer: {
             radius: 12,
         },
         random: {
@@ -73,24 +57,19 @@ function createState(canvas, overrides = {}) {
         maxDigStrength: 0.3,
         tank: {
             width: 25,
-            color: 'green',
+            color: Color.fromName('green'),
         },
-        renderer: new CanvasRenderer(canvas),
-        color: {
-            background: rgba(),
-        },
-        backgroundColor: rgba(),
     };
 }
 
 function setup(canvas) {
     const state = createState(canvas);
 
-    canvas.height = state.canvas.height;
-    canvas.width = state.canvas.width;
-    canvas.style.backgroundColor = state.canvas.background;
+    canvas.height = state.canvas.size.height;
+    canvas.width = state.canvas.size.width;
+    canvas.style.backgroundColor = state.canvas.background.toString();
 
-    createSurface(state);
+    generateTerrain(state);
 
     return state;
 }
@@ -98,36 +77,30 @@ function setup(canvas) {
 function update(renderer, state) {
     const events = state.events;
 
-    renderer.drawRect({
-        x: 0, y: 0,
-        width: state.canvas.width,
-        height: state.canvas.height,
-        color: state.canvas.background,
-    });
-
+    renderer.clear(state.canvas.background);
     drawTerrain(renderer, state);
-
+    drawSurface(renderer, state);
+    if (state.canvas.squnit >= 5) drawVertices(renderer, state);
     if (isSome(events.mouse) && events.mouse.present) {
         drawMouse(renderer, state);
         modifyTerrain(state);
         settleTerrain(state);
     }
-
     drawTank(renderer, state);
 
     return state;
 }
 
-function createSurface(state) {
-    const { canvas, terrain } = state;
-    terrain.vertices.length = 0;
+function generateTerrain(state) {
+    const { canvas: { grid }, terrain } = state;
     const gradientSpread = 5;
-    const ground = Math.floor(canvas.rows / 2);
-    const deltaY = sampleWaves(terrain.waves, canvas.cols + 1, 0, Math.PI / 8);
+    const ground = Math.floor(grid.rows / 2);
+    const deltaY = sampleWaves(terrain.waves, grid.cols + 1, 0, Math.PI / 8);
 
-    for (let r = 0; r <= canvas.rows; r++) {
-        const row = Array(canvas.cols + 1);
-        for (let c = 0; c <= canvas.cols; c++) {
+    terrain.vertices.length = 0;
+    for (let r = 0; r <= grid.rows; r++) {
+        const row = Array(grid.cols + 1);
+        for (let c = 0; c <= grid.cols; c++) {
             const terrain_y = ground + deltaY[c];
             let density = (r - terrain_y + 0.5) / gradientSpread;
             row[c] = clamp(0.0, 1.0, density);
@@ -137,90 +110,66 @@ function createSurface(state) {
 }
 
 function drawSurfaceDensity(renderer, state) {
-    const { square, rows, cols } = state.canvas;
+    const { squnit, grid } = state.canvas;
     const vertices = state.terrain.vertices;
 
-    for (let r=0; r<rows; r++) {
-        for (let c=0; c<cols; c++) {
-            const a0 = (vertices[r+0][c+0] + vertices[r+0][c+1]) / 2;
-            const a1 = (vertices[r+1][c+0] + vertices[r+1][c+1]) / 2;
-            renderer.drawLinearGradient({
-                x: c * square,
-                y: r * square,
-                width: square,
-                height: square,
-                gx0: (c + 0) * square,
-                gy0: (r + 0) * square,
-                gx1: (c + 0) * square,
-                gy1: (r + 1) * square,
-                colorStops: [
-                    { value: 0.0, color: rgba({ r:0, g:0, b:0, a: a0 }) },
-                    { value: 1.0, color: rgba({ r:0, g:0, b:0, a: a1 }) },
+    for (let r=0; r < grid.rows; r++) {
+        for (let c=0; c < grid.cols; c++) {
+
+            const a0 = avg(vertices[r+0][c+0], vertices[r+0][c+1]);
+            const a1 = avg(vertices[r+1][c+0], vertices[r+1][c+1]);
+
+            renderer.drawLinearGradient(
+                new Rect(c * squnit, r * squnit, squnit, squnit),
+                new Vec2((c + 0) * squnit, (r + 0) * squnit),
+                new Vec2((c + 0) * squnit, (r + 1) * squnit),
+                [
+                    { value: 0.0, color: Color(0, 0, 0, a0) },
+                    { value: 1.0, color: Color(0, 0, 0, a1) },
                 ],
-            });
+            );
         }
     }
 }
 
 function drawVertices(renderer, state) {
-    const { canvas, terrain } = state;
-    const radius = Math.min(canvas.rows, canvas.cols) / canvas.square;
-    if (canvas.square < 5) return;
+    const { canvas: { grid, squnit }, terrain } = state;
+    const radius = Math.min(grid.rows, grid.cols) / squnit;
 
-    for (let r=0; r<=canvas.rows; r++) {
-        for (let c=0; c<=canvas.cols; c++) {
+    for (let r=0; r <= grid.rows; r++) {
+        for (let c=0; c <= grid.cols; c++) {
             const ground = terrain.vertices[r][c] > terrain.threshold;
-            renderer.drawCircle({
-                x: c * canvas.square,
-                y: r * canvas.square,
-                radius: radius * 0.2,
-                color: ground ? 'white' : 'black',
-            });
+            renderer.drawCircle(
+                new Vec2(c * squnit, r * squnit),
+                radius * 0.2,
+                Color.fromName(ground ? 'white' : 'black'),
+            );
         }
     }
 }
 
 function drawSurface(renderer, state) {
-    const { cols, square } = state.canvas;
-    const surface = [];
+    const { grid, squnit } = state.canvas;
+    const points = [];
 
-    for (let x = 0; x <= cols; x++) {
-        const px = x * square;
+    for (let x = 0; x <= grid.cols; x++) {
+        const px = x * squnit;
         const py = surfaceY(px, state);
-        surface.push({ x: px, y: py });
+        points.push(new Vec2(px, py));
     }
 
-    for (let i = 0; i < cols; i++) {
-        const p1 = surface[i];
-        const p2 = surface[i + 1];
-        renderer.drawLine({
-            x1: p1.x,
-            y1: p1.y,
-            x2: p2.x,
-            y2: p2.y,
-            color: 'magenta',
-            thickness: 1,
-        });
-    }
+    renderer.drawPolygon(points, Color.fromName('magenta'), 3, false);
 }
 
 function drawMouse(renderer, state) {
     const { mouse } = state.events;
 
-    renderer.drawLine({
-        x1: mouse.x,
-        y1: 0,
-        x2: mouse.x,
-        y2: state.canvas.height,
-        color: mouse.clicked ? 'blue' : 'red',
-    });
-
-    renderer.drawCircle({
-        x: mouse.x,
-        y: mouse.y,
-        radius: state.mouse.radius,
-        color: 'red',
-    })
+    renderer.drawLine(
+        new Vec2(mouse.x, 0),
+        new Vec2(mouse.x, state.canvas.size.height),
+        Color.fromName(mouse.clicked ? 'blue' : 'red'),
+    );
+    renderer.drawCircle(new Vec2(mouse), state.pointer.radius, Color.fromName('red'));
 }
 
 function sampleWaves(waves, length, start, step) {
@@ -242,37 +191,33 @@ function modifyTerrain(state) {
     const { mouse } = state.events;
     if (!isSome(mouse) || mouse.clicked !== true) return;
 
-    const canvas = state.canvas;
-    const mouseRadius = state.mouse.radius;
+    const { squnit, grid } = state.canvas;
+    const mouseRadius = state.pointer.radius;
     const maxDigStrength = state.maxDigStrength;
-    const square = canvas.square;
 
-    const centerX = Math.floor(mouse.x / square);
-    const centerY = Math.floor(mouse.y / square);
-    const radiusInGrid = Math.ceil(mouseRadius / square);
+    const center = new Vec2(Math.floor(mouse.x / squnit), Math.floor(mouse.y / squnit));
+    const radiusInGrid = Math.ceil(mouseRadius / squnit);
 
-    const minX = centerX - radiusInGrid;
-    const minY = centerY - radiusInGrid;
-    const maxX = centerX + radiusInGrid;
-    const maxY = centerY + radiusInGrid;
+    const min = new Vec2(center.x - radiusInGrid, center.y - radiusInGrid);
+    const max = new Vec2(center.x + radiusInGrid, center.y + radiusInGrid);
 
-    const rows = canvas.rows + 1;
-    const cols = canvas.cols + 1;
+    const rows = grid.rows + 1;
+    const cols = grid.cols + 1;
 
-    for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
+    for (let y = min.y; y <= max.y; y++) {
+        for (let x = min.x; x <= max.x; x++) {
             if (y >= 0 && y < rows && x >= 0 && x < cols) {
-                const dx = x - centerX;
-                const dy = y - centerY;
-                const distSquared = (dx * dx) + (dy * dy);
-                const radiusSquared = radiusInGrid * radiusInGrid;
+                const d = new Vec2(x - center.x, y - center.y)
+                const distsqunitd = (d.x * d.x) + (d.y * d.y);
+                const radiussqunitd = radiusInGrid * radiusInGrid;
 
-                if (distSquared <= radiusSquared) {
-                    const normalizedDistance = Math.sqrt(distSquared) / radiusInGrid;
+                if (distsqunitd <= radiussqunitd) {
+                    const normalizedDistance = Math.sqrt(distsqunitd) / radiusInGrid;
                     const falloff = 1 - (normalizedDistance * normalizedDistance);
 
                     const amountToSubtract = maxDigStrength * falloff;
-                    state.terrain.vertices[y][x] = Math.max(0.0, state.terrain.vertices[y][x] - amountToSubtract);
+                    const value = Math.max(0.0, state.terrain.vertices[y][x] - amountToSubtract);
+                    state.terrain.vertices[y][x] = value;
                 }
             }
         }
@@ -280,12 +225,12 @@ function modifyTerrain(state) {
 }
 
 function settleTerrain(state) {
-    const { rows, cols } = state.canvas;
+    const { grid } = state.canvas;
     const terrain = state.terrain;
 
-    for (let c = 0; c <= cols; c++) {
+    for (let c = 0; c <= grid.cols; c++) {
         let gaps = 0;
-        for (let r = rows; r >= 0; r--) {
+        for (let r = grid.rows; r >= 0; r--) {
             const empty = terrain.vertices[r][c] <= terrain.threshold;
             if (empty) {
                 gaps++;
@@ -339,382 +284,95 @@ function drawTank(renderer, state) {
             { x: -hw, y: -h }
         ];
 
-        const points = corners.map(p => ({
-            x: mouseX + (p.x * cos - p.y * sin),
-            y: avgY + (p.x * sin + p.y * cos)
-        }));
+        const points = corners.map(p => new Vec2(
+            mouseX + (p.x * cos - p.y * sin),
+            avgY + (p.x * sin + p.y * cos)
+        ));
 
-        renderer.drawPolygon({
-            points: points,
-            color: state.tank.color || 'blue',
-        });
+        renderer.drawPolygon(points, state.tank.color || Color.fromName('blue'));
     }
 }
 
 
 function drawTerrain(renderer, state) {
-    const { rows, cols, square } = state.canvas;
+    const { grid, squnit } = state.canvas;
     const { vertices, threshold } = state.terrain;
-    const strokeColor = 'magenta';
-    const fillColor = rgba({ r:0, g:0, b:0 });
-    const thickness = 0;
+
+    const strokeColor = Color.fromName('magenta');
+    const fillColor = Color.fromName('black');
     const fill = true;
     const stroke = !fill;
 
-    for (let i=0; i<rows; i++) {
-        for (let j=0; j<cols; j++) {
+    for (let i=0; i < grid.rows; i++) {
+        for (let j=0; j < grid.cols; j++) {
 
-            // Square anatomy:
+            // Grid/Points square anatomy:
             //
-            // B +------+ A
-            //   |      |
-            //   |      |
-            // C +------+ D
+            //    ----------J------->
+            //  |
+            //  |.          2
+            //  |   B 3 +---+---+ 1 A
+            //  |       |       |
+            //  | I   4 +       | 0
+            //  |       |       |
+            //  |   C 5 +---+---+ 7 D
+            //  v.          6
 
             const a = vertices[i+0][j+1] > threshold;
             const b = vertices[i+0][j+0] > threshold;
             const c = vertices[i+1][j+0] > threshold;
             const d = vertices[i+1][j+1] > threshold;
 
-            const orient = d << 3 | c << 2 | b << 1 | a << 0;
-            // console.log(`${i}, ${j}, ${orient}`);
-            switch (orient) {
-                case 1: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 2: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+0.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 3: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 4: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 5: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+0.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+1.0)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 6: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 7: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+1.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 8: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+1.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 9: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 10: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 11: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+0.5)*square,
-                        y2: (i+1.0)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 12: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.0)*square,
-                        y1: (i+0.5)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 13: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+0.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 14: {
-                    if (stroke) renderer.drawLine({
-                        x1: (j+0.5)*square,
-                        y1: (i+0.0)*square,
-                        x2: (j+1.0)*square,
-                        y2: (i+0.5)*square,
-                        color: strokeColor,
-                        thickness: thickness,
-                    });
-                    if (fill) renderer.drawPolygon({
-                        points: [
-                            { x: (j+1.0)*square, y: (i+0.5)*square },
-                            { x: (j+0.5)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+0.0)*square },
-                            { x: (j+0.0)*square, y: (i+1.0)*square },
-                            { x: (j+1.0)*square, y: (i+1.0)*square },
-                        ],
-                        color: fillColor,
-                    });
-                } break;
-                case 15: {
-                    if (fill) renderer.drawRect({
-                        x: j*square,
-                        y: i*square,
-                        width: square,
-                        height: square,
-                        color: fillColor,
-                    });
-                } break;
-                default:
-                    break;
-            }
+            const points = [
+                ...(d && a ? [new Vec2(j+1.0, i+0.5)] : []),
+                ...(     a ? [new Vec2(j+1.0, i+0.0)] : []),
+                ...(a && b ? [new Vec2(j+0.5, i+0.0)] : []),
+                ...(     b ? [new Vec2(j+0.0, i+0.0)] : []),
+                ...(b && c ? [new Vec2(j+0.0, i+0.5)] : []),
+                ...(     c ? [new Vec2(j+0.0, i+1.0)] : []),
+                ...(c && d ? [new Vec2(j+0.5, i+1.0)] : []),
+                ...(     d ? [new Vec2(j+1.0, i+1.0)] : []),
+            ].map((p) => p.mul(squnit));
+
+            if (points.length < 2) continue;
+
+            if (fill) renderer.drawPolygon(points, fillColor);
+            if (stroke) renderer.drawPolygon(points, strokeColor, 1);
 
         }
     }
 }
 
 function surfaceY(x, state) {
-    const { rows, cols, square } = state.canvas;
+    const { grid, squnit } = state.canvas;
     const { vertices, threshold } = state.terrain;
 
-    const cFloat = x / square;
-    const c1 = Math.floor(Math.max(0, Math.min(cols, cFloat)));
-    const c2 = Math.min(cols, c1 + 1);
+    const cFloat = x / squnit;
+    const c1 = Math.floor(Math.max(0, Math.min(grid.cols, cFloat)));
+    const c2 = Math.min(grid.cols, c1 + 1);
     const lerpX = cFloat - c1;
 
     const getSurfaceR = (c) => {
-        for (let r = 0; r < rows - 1; r++) {
+        for (let r = 0; r < grid.rows - 1; r++) {
             const d1 = vertices[r][c];
             const d2 = vertices[r + 1][c];
             if (d1 <= threshold && d2 > threshold) {
                 return r + (threshold - d1) / (d2 - d1);
             }
         }
-        return rows;
+        return grid.rows;
     };
 
     const r1 = getSurfaceR(c1);
     const r2 = getSurfaceR(c2);
     const surfaceR = r1 + (r2 - r1) * lerpX;
 
-    return surfaceR * square;
+    return surfaceR * squnit;
 }
 
-const slope = (x1, y1, x2, y2) => (y2 - y1) / (x2 - x1);
-
 function surfaceSlope(col, state) {
-    const { rows, cols } = state.canvas;
+    const rows = state.canvas.grid.rows;
+    const cols = state.canvas.grid.cols;
     const { vertices, threshold } = state.terrain;
 
     let surfaceR = -1;
@@ -741,14 +399,14 @@ function surfaceSlope(col, state) {
 
 
 function surfaceInfo(x, state) {
-    const col = Math.floor(x / state.canvas.square);
+    const col = Math.floor(x / state.canvas.squnit);
     const info = surfaceSlope(col, state);
 
     if (info.y === null) {
         return null;
     }
 
-    const y = info.y * state.canvas.square;
+    const y = info.y * state.canvas.squnit;
     return { y, slope: info.slope };
 }
 

@@ -1,9 +1,21 @@
+
 class Vec2 {
     constructor(x = 0, y = 0) {
-        this.x = x;
-        this.y = y;
+        if (typeof x === 'object' && x !== null) {
+            this.x = x.x;
+            this.y = x.y;
+        } else {
+            this.x = x;
+            this.y = y;
+        }
         Object.freeze(this);
     }
+
+    get width() { return this.x; }
+    get height() { return this.y; }
+
+    get cols() { return this.x; }
+    get rows() { return this.y; }
 
     static zero() {
         return new Vec2(0, 0);
