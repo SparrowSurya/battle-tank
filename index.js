@@ -423,7 +423,7 @@ function moveTank(state) {
 
     // TODO: Speed of tank should depend relative to slope and x component. Currently
     // the tank is moving fast on slopes.
-    const vel = tank.velocity.mul(state.dt).neg();
+    const vel = tank.velocity.mul(state.dt);
     let newX = isLeft ? tank.x - vel.x : (isRight ? tank.x + vel.x : tank.x);
     state.tank.x = clamp(newX, tank.width/2, size.width);
 }
