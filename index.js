@@ -55,7 +55,7 @@ function createState(canvas) {
             color: Color.fromHex("#6B8E23"),
         },
         pointer: {
-            radius: 12,
+            radius: 36,
         },
         events: {
             mouse: { present: false },
@@ -65,7 +65,7 @@ function createState(canvas) {
             seed: seed,
             random: mulberry32(seed),
         },
-        maxDigStrength: 0.3,
+        maxDigStrength: 0.9,
         tank: {
             minMuzzleVelcity: Vec2.all(10),
             x: canvasSize.width / 2,
@@ -73,9 +73,10 @@ function createState(canvas) {
             velocity: new Vec2(80, 30),
             color: Color.fromHex('#556B2F'),
             minPower: 10,
-            maxPower: 100,
+            maxPower: 120,
             face: 1, // 1 for right, -1 for left
             trigger: {
+                powerMul: 3,
                 power: 0,
                 aimStart: null,
             },
@@ -110,8 +111,6 @@ function update(renderer, state) {
     drawSurface(renderer, state);
     if (state.canvas.squnit >= 5) drawVertices(renderer, state);
     if (isSome(events.mouse) && events.mouse.present) {
-        // drawMouse(renderer, state);
-        // modifyTerrain(state);
         settleTerrain(state);
     }
     moveTank(state);
@@ -222,16 +221,13 @@ function sampleWaves(waves, length, start, step) {
     return points;
 }
 
-function modifyTerrain(state) {
-    const { mouse } = state.events;
-    if (!isSome(mouse) || mouse.clicked !== true) return;
-
+function modifyTerrain(state, x, y) {
     const { squnit, grid } = state.canvas;
-    const mouseRadius = state.pointer.radius;
+    const radius = state.pointer.radius;
     const maxDigStrength = state.maxDigStrength;
 
-    const center = new Vec2(Math.floor(mouse.x / squnit), Math.floor(mouse.y / squnit));
-    const radiusInGrid = Math.ceil(mouseRadius / squnit);
+    const center = new Vec2(Math.floor(x / squnit), Math.floor(y / squnit));
+    const radiusInGrid = Math.ceil(radius / squnit);
 
     const min = new Vec2(center.x - radiusInGrid, center.y - radiusInGrid);
     const max = new Vec2(center.x + radiusInGrid, center.y + radiusInGrid);
@@ -239,20 +235,20 @@ function modifyTerrain(state) {
     const rows = grid.rows + 1;
     const cols = grid.cols + 1;
 
-    for (let y = min.y; y <= max.y; y++) {
-        for (let x = min.x; x <= max.x; x++) {
-            if (y >= 0 && y < rows && x >= 0 && x < cols) {
-                const d = new Vec2(x - center.x, y - center.y)
-                const distsqunitd = (d.x * d.x) + (d.y * d.y);
-                const radiussqunitd = radiusInGrid * radiusInGrid;
+    for (let iy = min.y; iy <= max.y; iy++) {
+        for (let ix = min.x; ix <= max.x; ix++) {
+            if (iy >= 0 && iy < rows && ix >= 0 && ix < cols) {
+                const d = new Vec2(ix - center.x, iy - center.y)
+                const distsq = (d.x * d.x) + (d.y * d.y);
+                const radiussq = radiusInGrid * radiusInGrid;
 
-                if (distsqunitd <= radiussqunitd) {
-                    const normalizedDistance = Math.sqrt(distsqunitd) / radiusInGrid;
+                if (distsq <= radiussq) {
+                    const normalizedDistance = Math.sqrt(distsq) / radiusInGrid;
                     const falloff = 1 - (normalizedDistance * normalizedDistance);
 
                     const amountToSubtract = maxDigStrength * falloff;
-                    const value = Math.max(0.0, state.terrain.vertices[y][x] - amountToSubtract);
-                    state.terrain.vertices[y][x] = value;
+                    const value = Math.max(0.0, state.terrain.vertices[iy][ix] - amountToSubtract);
+                    state.terrain.vertices[iy][ix] = value;
                 }
             }
         }
@@ -339,7 +335,7 @@ function drawProjectilePath(renderer, state) {
 
     const drag = new Vec2(mouse.x - tank.trigger.aimStart.x, mouse.y - tank.trigger.aimStart.y);
     const power = clamp(drag.length(), tank.minPower, tank.maxPower);
-    const vel = drag.neg().normalise().mul(power * 10);
+    const vel = drag.neg().normalise().mul(power * tank.trigger.powerMul);
 
     const canvasSize = state.canvas.size;
     const g = state.env.gravity;
@@ -391,7 +387,7 @@ function aimTank(renderer, state) {
         if (tank.trigger.aimStart) {
             const drag = new Vec2(mouse.x - tank.trigger.aimStart.x, mouse.y - tank.trigger.aimStart.y);
             const power = clamp(drag.length(), tank.minPower, tank.maxPower);
-            const vel = drag.neg().normalise().mul(power * 10);
+            const vel = drag.neg().normalise().mul(power * tank.trigger.powerMul);
 
             if (tank.ammo === null) {
                 state.tank.ammo = { pos: nozzlePos, vel: vel };
@@ -419,8 +415,11 @@ function moveProjectile(state) {
     if (ball == null) return;
 
     const info = surfaceInfo(ball.pos.x, state);
-    if (info.y > ball.pos.y) {
-
+    if (info && ball.pos.y >= info.y) {
+        modifyTerrain(state, ball.pos.x, ball.pos.y);
+        settleTerrain(state);
+        state.tank.ammo = null;
+        return;
     }
 
     const { pos, vel } = updateProjectile(ball.pos, ball.vel, state.env.gravity, state.dt);
@@ -559,6 +558,9 @@ function surfaceSlope(col, state) {
 
 function surfaceInfo(x, state) {
     const col = Math.floor(x / state.canvas.squnit);
+    if (col < 0 || col > state.canvas.grid.cols) {
+        return null;
+    }
     const info = surfaceSlope(col, state);
 
     if (info.y === null) {
