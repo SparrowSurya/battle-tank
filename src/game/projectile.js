@@ -33,9 +33,31 @@ export default class Projectile {
     /**
      * Renders the projectile on screen.
      * @param {CanvasRenderer} renderer - The canvas renderer object.
+     * @param {HTMLCanvasElement|null} [spriteCanvas=null] - The processed sprite canvas.
      */
-    draw(renderer) {
-        renderer.drawCircle(this.pos, this.radius, this.color);
+    draw(renderer, spriteCanvas = null) {
+        if (!spriteCanvas) {
+            renderer.drawCircle(this.pos, this.radius, this.color);
+            return;
+        }
+
+        const w = this.radius * 4;
+        const h = w * (spriteCanvas.height / spriteCanvas.width);
+
+        renderer.ctx.save();
+        renderer.ctx.translate(this.pos.x, this.pos.y);
+        const angle = Math.atan2(this.vel.y, this.vel.x);
+        renderer.ctx.rotate(angle);
+
+        renderer.ctx.drawImage(
+            spriteCanvas,
+            -w / 2,
+            -h / 2,
+            w,
+            h
+        );
+
+        renderer.ctx.restore();
     }
 
     /**

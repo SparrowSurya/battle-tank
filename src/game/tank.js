@@ -10,14 +10,14 @@ export default class Tank {
     /**
      * Creates a new Tank instance.
      * @param {number} x - Horizontal starting pixel coordinate.
-     * @param {number} [width=25] - Width of the tank box.
+     * @param {number} [width=32] - Width of the tank box.
      */
-    constructor(x, width = 25) {
+    constructor(x, width = 32) {
         this.x = x;
         this.y = null; // Set dynamically on start or first update
         this.velY = 0; // Vertical velocity for falling gravity physics
         this.width = width;
-        this.height = 16;
+        this.height = 20;
         this.velocity = new Vec2(80, 30);
         this.color = Color.fromHex('#556B2F');
         this.minPower = 10;
@@ -182,11 +182,46 @@ export default class Tank {
     }
 
     /**
+     * Draws the tank. Supports drawing the loaded sprite, falling back to vector polygon.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     * @param {Terrain} terrain - Terrain entity.
+     * @param {HTMLCanvasElement|null} [spriteCanvas=null] - Loaded and processed sprite canvas.
+     */
+    draw(renderer, terrain, spriteCanvas = null) {
+        if (!spriteCanvas) {
+            this.drawVectorTank(renderer, terrain);
+            return;
+        }
+
+        const surface = this.getSurfaceHeightAndSlope(terrain);
+        const inAir = this.y !== null && this.y < (surface.y - 1.0);
+        const angle = inAir ? 0 : Math.atan(surface.slope);
+
+        const spriteHeight = this.height;
+        const spriteWidth = spriteHeight * (spriteCanvas.width / spriteCanvas.height);
+
+        renderer.ctx.save();
+        renderer.ctx.translate(this.x, this.y);
+        renderer.ctx.rotate(angle);
+        renderer.ctx.scale(this.face, 1);
+
+        renderer.ctx.drawImage(
+            spriteCanvas,
+            -spriteWidth / 2,
+            -spriteHeight,
+            spriteWidth,
+            spriteHeight
+        );
+
+        renderer.ctx.restore();
+    }
+
+    /**
      * Draws the tank body polygon. Stays flat while airborne, aligns to slope when grounded.
      * @param {CanvasRenderer} renderer - Renderer object.
      * @param {Terrain} terrain - Terrain entity.
      */
-    draw(renderer, terrain) {
+    drawVectorTank(renderer, terrain) {
         const tankWidth = this.width;
         const tankHeight = this.height;
 
@@ -216,29 +251,69 @@ export default class Tank {
     }
 
     /**
-     * Renders the white barrel nozzle line and drag aiming lines.
+     * Renders the white barrel nozzle line or the rotating gun barrel sprite, along with drag aiming lines.
      * @param {CanvasRenderer} renderer - Renderer object.
      * @param {Terrain} terrain - Terrain entity.
      * @param {object} mouse - Current mouse coordinates snapshot.
+     * @param {HTMLCanvasElement|null} [barrelCanvas=null] - Pre-processed barrel/turret sprite canvas.
      */
-    drawAim(renderer, terrain, mouse) {
+    drawAim(renderer, terrain, mouse, barrelCanvas = null) {
         const nozzleInfo = this.getNozzleInfo(terrain);
         if (!nozzleInfo) return;
         const { nozzlePos, slopeAngle } = nozzleInfo;
+
+        // Calculate absolute barrel angle
+        let angle = 0;
+        let isAiming = false;
 
         if (this.trigger.aimStart && mouse.present) {
             const drag = new Vec2(mouse.x - this.trigger.aimStart.x, mouse.y - this.trigger.aimStart.y);
             const dragLength = drag.length();
             const nozzleDir = dragLength > 0 ? drag.neg().normalise() : new Vec2(this.face, 0);
+            angle = Math.atan2(nozzleDir.y, nozzleDir.x);
+            isAiming = true;
+        } else {
+            angle = slopeAngle + (this.face === -1 ? Math.PI : 0);
+        }
 
+        if (!barrelCanvas) {
+            const nozzleDir = new Vec2(Math.cos(angle), Math.sin(angle));
             // Draw nozzle line
             renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), 'white', 4);
+            
+            if (isAiming) {
+                // Draw pull back line
+                renderer.drawLine(this.trigger.aimStart, new Vec2(mouse.x, mouse.y), Color.fromName('black'), 1);
+            }
+            return;
+        }
+
+        // Draw barrel sprite
+        const barrelHeight = this.height * 0.7;
+        const barrelWidth = barrelHeight * (barrelCanvas.width / barrelCanvas.height);
+
+        renderer.ctx.save();
+        // Translate to the turret mounting point on top of hull
+        renderer.ctx.translate(nozzlePos.x, nozzlePos.y);
+        renderer.ctx.rotate(angle);
+
+        // Pivot point at X=25% of width, Y=60% of height (turret center of sprite)
+        const px = barrelWidth * 0.25;
+        const py = barrelHeight * 0.60;
+
+        renderer.ctx.drawImage(
+            barrelCanvas,
+            -px,
+            -py,
+            barrelWidth,
+            barrelHeight
+        );
+
+        renderer.ctx.restore();
+
+        if (isAiming) {
             // Draw pull back line
             renderer.drawLine(this.trigger.aimStart, new Vec2(mouse.x, mouse.y), Color.fromName('black'), 1);
-        } else {
-            const defaultAngle = slopeAngle + (this.face === -1 ? Math.PI : 0);
-            const nozzleDir = new Vec2(Math.cos(defaultAngle), Math.sin(defaultAngle));
-            renderer.drawLine(nozzlePos, nozzlePos.add(nozzleDir.mul(15)), 'white', 4);
         }
     }
 

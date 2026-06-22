@@ -4,6 +4,12 @@ import Vec2 from '../core/vec2.js';
 import InputManager from './input.js';
 import Terrain from './terrain.js';
 import Tank from './tank.js';
+import {
+    createRedTankHull,
+    createBlueTankHull,
+    createTankBarrel,
+    createProjectileSprite
+} from '../core/utils.js';
 
 /**
  * The core controller orchestrating game lifecycle loop, updates, physics step updates, and rendering.
@@ -29,6 +35,25 @@ export default class GameEngine {
         
         this.projectiles = [];
         this.lastTime = 0;
+
+        // Initialize sprite container and trigger asynchronous asset loading
+        this.sprites = {
+            tankRed: null,
+            tankBlue: null,
+            tankBarrel: null,
+            projectile: null
+        };
+        this.loadAssets();
+    }
+
+    /**
+     * Loads the visual assets asynchronously and processes them to apply transparency.
+     */
+    loadAssets() {
+        this.sprites.tankRed = createRedTankHull();
+        this.sprites.tankBlue = createBlueTankHull();
+        this.sprites.tankBarrel = createTankBarrel();
+        this.sprites.projectile = createProjectileSprite();
     }
 
     /**
@@ -119,12 +144,12 @@ export default class GameEngine {
 
         // 3. Draw tank aiming helpers and tank itself
         this.tank.drawProjectilePath(this.renderer, this.terrain, this.input.getSnapshot().mouse, this.gravity);
-        this.tank.drawAim(this.renderer, this.terrain, this.input.getSnapshot().mouse);
-        this.tank.draw(this.renderer, this.terrain);
+        this.tank.drawAim(this.renderer, this.terrain, this.input.getSnapshot().mouse, this.sprites.tankBarrel);
+        this.tank.draw(this.renderer, this.terrain, this.sprites.tankRed);
 
         // 4. Draw projectiles
         for (const p of this.projectiles) {
-            p.draw(this.renderer);
+            p.draw(this.renderer, this.sprites.projectile);
         }
     }
 }
