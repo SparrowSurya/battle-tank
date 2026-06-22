@@ -3,7 +3,15 @@ import Color from '../core/color.js';
 import { clamp, isSome, inRange, updateProjectile } from '../core/utils.js';
 import Projectile from './projectile.js';
 
+/**
+ * Handles the tank physics, movement, aiming barrel, charge power, and projectile path prediction.
+ */
 export default class Tank {
+    /**
+     * Creates a new Tank instance.
+     * @param {number} x - Horizontal starting pixel coordinate.
+     * @param {number} [width=25] - Width of the tank box.
+     */
     constructor(x, width = 25) {
         this.x = x;
         this.width = width;
@@ -20,6 +28,13 @@ export default class Tank {
         };
     }
 
+    /**
+     * Updates the tank's physics state and checks if a projectile is launched.
+     * @param {number} dt - Time delta in seconds.
+     * @param {object} input - Snapshot of active input manager states.
+     * @param {Terrain} terrain - Game terrain entity.
+     * @returns {Projectile|null} A new Projectile instance if fired, otherwise null.
+     */
     update(dt, input, terrain) {
         const { keyboard, mouse } = input;
         
@@ -74,6 +89,11 @@ export default class Tank {
         return firedProjectile;
     }
 
+    /**
+     * Calculates the barrel nozzle absolute coordinates based on terrain slope.
+     * @param {Terrain} terrain - Terrain entity.
+     * @returns {{nozzlePos: Vec2, slopeAngle: number, info: object}|null} Nozzle information details.
+     */
     getNozzleInfo(terrain) {
         const info = terrain.surfaceInfo(this.x);
         if (info === null) return null;
@@ -87,6 +107,11 @@ export default class Tank {
         return { nozzlePos, slopeAngle, info };
     }
 
+    /**
+     * Draws the tank body polygon aligned to the local terrain slope.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     * @param {Terrain} terrain - Terrain entity.
+     */
     draw(renderer, terrain) {
         const tankWidth = this.width;
         const tankHeight = this.height;
@@ -134,6 +159,12 @@ export default class Tank {
         }
     }
 
+    /**
+     * Renders the white barrel nozzle line and drag aiming lines.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     * @param {Terrain} terrain - Terrain entity.
+     * @param {object} mouse - Current mouse coordinates snapshot.
+     */
     drawAim(renderer, terrain, mouse) {
         const nozzleInfo = this.getNozzleInfo(terrain);
         if (!nozzleInfo) return;
@@ -155,6 +186,13 @@ export default class Tank {
         }
     }
 
+    /**
+     * Predicts and renders the dotted/solid orange path representing initial projectile trajectory.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     * @param {Terrain} terrain - Terrain entity.
+     * @param {object} mouse - Current mouse coordinates snapshot.
+     * @param {number} gravity - Gravity rate.
+     */
     drawProjectilePath(renderer, terrain, mouse, gravity) {
         if (!this.trigger.aimStart || !mouse.present) return;
 

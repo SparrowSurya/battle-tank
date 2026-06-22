@@ -5,7 +5,14 @@ import InputManager from './input.js';
 import Terrain from './terrain.js';
 import Tank from './tank.js';
 
+/**
+ * The core controller orchestrating game lifecycle loop, updates, physics step updates, and rendering.
+ */
 export default class GameEngine {
+    /**
+     * Creates a new GameEngine instance.
+     * @param {HTMLCanvasElement} canvas - HTML5 Canvas element.
+     */
     constructor(canvas) {
         this.canvas = canvas;
         this.renderer = new CanvasRenderer(canvas);
@@ -24,6 +31,9 @@ export default class GameEngine {
         this.lastTime = 0;
     }
 
+    /**
+     * Sets canvas background, generates terrain, triggers input listeners and starts the game loop.
+     */
     start() {
         // Set canvas styling
         this.canvas.style.backgroundColor = this.background.toString();
@@ -39,6 +49,10 @@ export default class GameEngine {
         requestAnimationFrame((time) => this.loop(time));
     }
 
+    /**
+     * Standard animation frame callback loop.
+     * @param {number} time - High-resolution timestamp from requestAnimationFrame.
+     */
     loop(time) {
         // Cap dt to avoid massive physics jumps if tab goes background
         const dt = Math.min((time - this.lastTime) / 1000, 0.1);
@@ -50,6 +64,10 @@ export default class GameEngine {
         requestAnimationFrame((time) => this.loop(time));
     }
 
+    /**
+     * Advances game entity coordinates and resolves physical collisions.
+     * @param {number} dt - Time delta in seconds.
+     */
     update(dt) {
         const inputSnapshot = this.input.getSnapshot();
 
@@ -81,6 +99,9 @@ export default class GameEngine {
         }
     }
 
+    /**
+     * Directs renderer calls to repaint game elements.
+     */
     draw() {
         // 1. Clear screen
         this.renderer.clear(this.background);

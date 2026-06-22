@@ -4,7 +4,17 @@ import Color from '../core/color.js';
 import { mulberry32 } from '../core/random.js';
 import { clamp, lerp, avg, inRange } from '../core/utils.js';
 
+/**
+ * Manages the destructible grid terrain, wave rendering, settling, and slope calculation.
+ */
 export default class Terrain {
+    /**
+     * Creates a new Terrain instance.
+     * @param {number} canvasWidth - Canvas width in pixels.
+     * @param {number} canvasHeight - Canvas height in pixels.
+     * @param {number} [squnit=2] - The size of each grid square in pixels.
+     * @param {number} [seed=Date.now()] - PRNG seed for waves.
+     */
     constructor(canvasWidth, canvasHeight, squnit = 2, seed = Date.now()) {
         this.squnit = squnit;
         this.size = new Vec2(canvasWidth, canvasHeight);
@@ -20,6 +30,12 @@ export default class Terrain {
         this.maxDigStrength = 0.9;
     }
 
+    /**
+     * Generates sine wave profiles representing terrain heights.
+     * @param {number} seed - PRNG seed.
+     * @param {object} [options={}] - Wave customization settings.
+     * @returns {object[]} Array of waves `{ amp, freq, phase }`.
+     */
     createWaves(seed, options = {}) {
         const rand = mulberry32(seed);
         const {
@@ -50,6 +66,14 @@ export default class Terrain {
         return waves;
     }
 
+    /**
+     * Samples multiple sine waves to generate an elevation profile array.
+     * @param {object[]} waves - Waves array.
+     * @param {number} length - Number of points to sample.
+     * @param {number} start - X start multiplier.
+     * @param {number} step - Step size multiplier.
+     * @returns {number[]} Height offsets array.
+     */
     sampleWaves(waves, length, start, step) {
         const points = [];
         for (let x = 0; x < length; x++) {
@@ -63,6 +87,9 @@ export default class Terrain {
         return points;
     }
 
+    /**
+     * Fills the 2D grid vertices density map based on sine wave profiles.
+     */
     generate() {
         const { grid, waves } = this;
         const gradientSpread = 5;
@@ -81,6 +108,12 @@ export default class Terrain {
         }
     }
 
+    /**
+     * Carves a spherical crater in the terrain by reducing density of vertices.
+     * @param {number} x - Explosion center X (pixels).
+     * @param {number} y - Explosion center Y (pixels).
+     * @param {number} [radius=36] - Radius of modification.
+     */
     modify(x, y, radius = 36) {
         const { squnit, grid, vertices, maxDigStrength } = this;
 
@@ -113,6 +146,9 @@ export default class Terrain {
         }
     }
 
+    /**
+     * Sand-like physics that drops floating terrain blocks down into empty spots.
+     */
     settle() {
         const { grid, vertices, threshold } = this;
 
@@ -130,6 +166,11 @@ export default class Terrain {
         }
     }
 
+    /**
+     * Resolves the Y-coordinate of the surface at a specific horizontal position.
+     * @param {number} x - Horizontal coordinate (pixels).
+     * @returns {number} Vertical coordinate of the surface (pixels).
+     */
     surfaceY(x) {
         const { grid, squnit, vertices, threshold } = this;
 
@@ -156,6 +197,11 @@ export default class Terrain {
         return surfaceR * squnit;
     }
 
+    /**
+     * Computes the slope of the surface at a specific grid column.
+     * @param {number} col - Grid column index.
+     * @returns {{y: number|null, slope: number}}
+     */
     surfaceSlope(col) {
         const rows = this.grid.rows;
         const cols = this.grid.cols;
@@ -183,6 +229,11 @@ export default class Terrain {
         return { y: surfaceR, slope: -gradX / gradY };
     }
 
+    /**
+     * Resolves complete surface info (y position and slope) at a horizontal pixel coordinate.
+     * @param {number} x - Horizontal coordinate (pixels).
+     * @returns {{y: number, slope: number}|null} Surface info or null if out of grid bounds.
+     */
     surfaceInfo(x) {
         const col = Math.floor(x / this.squnit);
         if (col < 0 || col > this.grid.cols) {
@@ -198,10 +249,18 @@ export default class Terrain {
         return { y, slope: info.slope };
     }
 
+    /**
+     * Main drawing method for the terrain.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     */
     draw(renderer) {
         this.drawTerrain(renderer);
     }
 
+    /**
+     * Draws the filled polygon terrain grid using marching squares polygons.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     */
     drawTerrain(renderer) {
         const { grid, squnit, vertices, threshold, color } = this;
         const strokeColor = color;
@@ -235,6 +294,10 @@ export default class Terrain {
         }
     }
 
+    /**
+     * Draws a line representing the thin top grass/surface profile.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     */
     drawSurface(renderer) {
         const { grid, squnit, surfaceColor } = this;
         const points = [];
@@ -248,6 +311,10 @@ export default class Terrain {
         renderer.drawPolygon(points, surfaceColor, 4, false);
     }
 
+    /**
+     * Renders debug markers representing the density vertices.
+     * @param {CanvasRenderer} renderer - Renderer object.
+     */
     drawVertices(renderer) {
         const { grid, squnit, vertices, threshold } = this;
         const radius = Math.min(grid.rows, grid.cols) / squnit;
