@@ -1,5 +1,6 @@
 import Vec2 from '../core/vec2.js';
 import Color from '../core/color.js';
+import Rect from '../core/rect.js';
 import { clamp, isSome, inRange, updateProjectile } from '../core/utils.js';
 import Projectile from './projectile.js';
 
@@ -10,16 +11,24 @@ export default class Tank {
     /**
      * Creates a new Tank instance.
      * @param {number} x - Horizontal starting pixel coordinate.
+     * @param {string} player - Player identifier ('blue' or 'red').
      * @param {number} [width=32] - Width of the tank box.
      */
-    constructor(x, width = 32) {
+    constructor(x, player, width = 32) {
         this.x = x;
+        this.player = player; // 'blue' or 'red'
         this.y = null; // Set dynamically on start or first update
         this.velY = 0; // Vertical velocity for falling gravity physics
         this.width = width;
         this.height = 20;
         this.velocity = new Vec2(80, 30);
         this.color = Color.fromHex('#556B2F');
+        
+        // Turn-based parameters
+        this.health = 100;
+        this.maxFuel = 100; // Total movement budget per turn (in pixels)
+        this.fuel = 100;    // Remaining movement budget
+        
         this.minPower = 10;
         this.maxPower = 120;
         this.face = 1; // 1 for right, -1 for left
@@ -28,6 +37,16 @@ export default class Tank {
             power: 0,
             aimStart: null,
         };
+    }
+
+    /**
+     * Gets the axis-aligned bounding box (AABB) of the tank hull.
+     * @returns {Rect} Bounding box of the tank.
+     */
+    getBoundingBox() {
+        const leftX = this.x - this.width / 2;
+        const topY = this.y - this.height;
+        return new Rect(leftX, topY, this.width, this.height);
     }
 
     /**
@@ -74,9 +93,10 @@ export default class Tank {
      * @param {Terrain} terrain - Game terrain entity.
      * @param {number} gravity - Gravity rate (pixels/second^2).
      * @param {number} activeProjectilesCount - Count of currently active projectiles in the air.
+     * @param {boolean} isMyTurn - True if this tank is controlled by the active player.
      * @returns {Projectile|null} A new Projectile instance if fired, otherwise null.
      */
-    update(dt, input, terrain, gravity, activeProjectilesCount) {
+    update(dt, input, terrain, gravity, activeProjectilesCount, isMyTurn) {
         const { keyboard, mouse } = input;
         
         // 0. Initialize Y coordinate to surface height if not yet set
@@ -85,8 +105,8 @@ export default class Tank {
             this.y = initialSurface.y;
         }
 
-        // 1. Move tank horizontally along the terrain profile
-        if (isSome(keyboard.key)) {
+        // 1. Move tank horizontally along the terrain profile (only if it is this tank's turn)
+        if (isMyTurn && isSome(keyboard.key)) {
             const isLeft = keyboard.key === 'ArrowLeft';
             const isRight = keyboard.key === 'ArrowRight';
 
@@ -97,11 +117,20 @@ export default class Tank {
                 const info = terrain.surfaceInfo(this.x);
                 const slopeVal = info ? info.slope : 0;
                 const speed = this.velocity.x;
-                // Adjust horizontal movement to maintain constant speed along the slope
-                const dx = (speed * dt) / Math.sqrt(1 + slopeVal * slopeVal);
                 
-                let newX = isLeft ? this.x - dx : this.x + dx;
-                this.x = clamp(newX, this.width / 2, terrain.size.width);
+                // Calculate desired step size along the surface
+                let dx = (speed * dt) / Math.sqrt(1 + slopeVal * slopeVal);
+                
+                // Clamp horizontal movement to remaining fuel
+                if (this.fuel < dx) {
+                    dx = this.fuel;
+                }
+
+                if (dx > 0) {
+                    this.fuel -= dx;
+                    let newX = isLeft ? this.x - dx : this.x + dx;
+                    this.x = clamp(newX, this.width / 2, terrain.size.width);
+                }
             }
         }
 
@@ -125,11 +154,11 @@ export default class Tank {
             this.velY = 0;
         }
 
-        // 3. Firing trigger logic (only allowed if there are no active projectiles)
+        // 3. Firing trigger logic (only allowed on active turn and when no active projectiles in the air)
         let firedProjectile = null;
         const nozzleInfo = this.getNozzleInfo(terrain);
 
-        if (nozzleInfo && activeProjectilesCount === 0) {
+        if (isMyTurn && nozzleInfo && activeProjectilesCount === 0) {
             const { nozzlePos } = nozzleInfo;
             if (mouse.clicked === true) {
                 if (!this.trigger.aimStart && mouse.present) {
@@ -145,14 +174,14 @@ export default class Tank {
                     const power = clamp(drag.length(), this.minPower, this.maxPower);
                     const vel = drag.neg().normalise().mul(power * this.trigger.powerMul);
 
-                    firedProjectile = new Projectile(nozzlePos, vel);
+                    firedProjectile = new Projectile(nozzlePos, vel, this.player);
 
                     this.trigger.aimStart = null;
                     this.trigger.power = 0;
                 }
             }
-        } else if (activeProjectilesCount > 0) {
-            // Lock aiming states if shots are currently active in the air
+        } else {
+            // Reset aiming trigger states if turn swaps or projectile fires
             this.trigger.aimStart = null;
             this.trigger.power = 0;
         }
@@ -172,10 +201,10 @@ export default class Tank {
         
         const slopeAngle = inAir ? 0 : (info ? Math.atan(info.slope) : 0);
         
-        const nozzleOffset = 10;
+        const nozzleOffset = this.height * 0.7; // Mount turret on the top deck of the hull (Y=6 in the 32x20 sprite)
         const currentY = this.y !== null ? this.y : (info ? info.y : terrain.size.y);
         const nozzlePos = new Vec2(
-            this.x + nozzleOffset * Math.sin(slopeAngle),
+            this.x + nozzleOffset * Math.sin(slopeAngle), // Offset perpendicular to slope (using + for correct rotation translation)
             currentY - nozzleOffset * Math.cos(slopeAngle)
         );
         return { nozzlePos, slopeAngle, info };
@@ -288,27 +317,46 @@ export default class Tank {
             return;
         }
 
-        // Draw barrel sprite
+        // Draw barrel sprite split into turret base (aligned with slope) and gun tube (aligned with aim angle)
         const barrelHeight = this.height * 0.7;
-        const barrelWidth = barrelHeight * (barrelCanvas.width / barrelCanvas.height);
+        const scale = barrelHeight / 12;
 
+        // 1. Draw turret base (semicircle part) rotated by slopeAngle (so it stays flat on top deck of the hull)
         renderer.ctx.save();
-        // Translate to the turret mounting point on top of hull
         renderer.ctx.translate(nozzlePos.x, nozzlePos.y);
-        renderer.ctx.rotate(angle);
-
-        // Pivot point at X=25% of width, Y=60% of height (turret center of sprite)
-        const px = barrelWidth * 0.25;
-        const py = barrelHeight * 0.60;
-
+        renderer.ctx.rotate(slopeAngle);
+        
+        const baseSx = 0;
+        const baseSy = 0;
+        const baseSw = 10;
+        const baseSh = 12;
+        const basePx = 6 * scale;
+        const basePy = 8 * scale;
+        
         renderer.ctx.drawImage(
             barrelCanvas,
-            -px,
-            -py,
-            barrelWidth,
-            barrelHeight
+            baseSx, baseSy, baseSw, baseSh,
+            -basePx, -basePy, baseSw * scale, baseSh * scale
         );
+        renderer.ctx.restore();
 
+        // 2. Draw gun barrel (tube part) rotated by absolute aim angle
+        renderer.ctx.save();
+        renderer.ctx.translate(nozzlePos.x, nozzlePos.y);
+        renderer.ctx.rotate(angle);
+        
+        const barrelSx = 10;
+        const barrelSy = 0;
+        const barrelSw = 14;
+        const barrelSh = 12;
+        const barrelPx = -4 * scale;
+        const barrelPy = 8 * scale;
+        
+        renderer.ctx.drawImage(
+            barrelCanvas,
+            barrelSx, barrelSy, barrelSw, barrelSh,
+            -barrelPx, -barrelPy, barrelSw * scale, barrelSh * scale
+        );
         renderer.ctx.restore();
 
         if (isAiming) {
@@ -318,7 +366,7 @@ export default class Tank {
     }
 
     /**
-     * Predicts and renders the dotted/solid orange path representing initial projectile trajectory.
+     * Predicts and renders the aiming trajectory line as a sequence of shrinking glowing dots.
      * @param {CanvasRenderer} renderer - Renderer object.
      * @param {Terrain} terrain - Terrain entity.
      * @param {object} mouse - Current mouse coordinates snapshot.
@@ -336,7 +384,7 @@ export default class Tank {
         const vel = drag.neg().normalise().mul(power * this.trigger.powerMul);
 
         const points = [nozzlePos];
-        const stepDt = 0.05;
+        const stepDt = 0.045; // Time delta step for simulation path
         let currentVel = vel;
         let currentPos = nozzlePos;
 
@@ -356,6 +404,19 @@ export default class Tank {
             points.push(currentPos);
         }
 
-        renderer.drawPolygon(points, Color.fromName('orange').withAlpha(0.5), 2, false);
+        // Draw dotted path with shrinking glowing dots
+        const dotCount = points.length;
+        const drawEvery = 4; // Space out the dots
+        const maxRadius = 4.0;
+        const dotColor = Color.fromHex('#ffaa00'); // Glowing orange
+
+        for (let i = 0; i < dotCount; i += drawEvery) {
+            const ratio = i / dotCount;
+            const size = maxRadius * (1 - ratio);
+            const alpha = 0.9 * (1 - ratio);
+            const pt = points[i];
+            
+            renderer.drawCircle(pt, size, dotColor.withAlpha(alpha));
+        }
     }
 }

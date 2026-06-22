@@ -3,18 +3,21 @@ import Color from '../core/color.js';
 import { inRange, updateProjectile } from '../core/utils.js';
 
 /**
- * Handles a ballistics projectile moving through space with gravity.
+ * Handles a ballistics projectile moving through space with gravity and self-collision protection on launch.
  */
 export default class Projectile {
     /**
      * Creates a new Projectile instance.
      * @param {Vec2} pos - Initial position.
      * @param {Vec2} vel - Initial velocity vector.
+     * @param {string} shooter - The shooter identifier ('blue' or 'red').
      * @param {number} [radius=5] - Radius of the projectile circle.
      */
-    constructor(pos, vel, radius = 5) {
+    constructor(pos, vel, shooter, radius = 5) {
         this.pos = pos;
         this.vel = vel;
+        this.shooter = shooter; // 'blue' or 'red'
+        this.ignoreShooter = true; // Set true initially to ignore self-collision on launch
         this.radius = radius;
         this.color = Color.fromName('black');
     }
