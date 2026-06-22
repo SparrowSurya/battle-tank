@@ -1,5 +1,8 @@
+import Color from './color.js';
+import Vec2 from './vec2.js';
+import Rect from './rect.js';
 
-class CanvasRenderer {
+export default class CanvasRenderer {
     constructor(canvas) {
         this.ctx = canvas.getContext("2d");
         this.canvas = canvas;

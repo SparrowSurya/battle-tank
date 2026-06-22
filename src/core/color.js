@@ -1,4 +1,4 @@
-class Color {
+export default class Color {
     constructor(r = 255, g = 255, b = 255, a = 1.0) {
         this.r = Math.max(0, Math.min(255, r));
         this.g = Math.max(0, Math.min(255, g));

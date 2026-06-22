@@ -1,5 +1,6 @@
+import Vec2 from './vec2.js';
 
-class Rect {
+export default class Rect {
     constructor(x = 0, y = 0, w = 0, h = 0) {
         if (typeof x === 'object' && x !== null) {
             this.x = x.x ?? 0;
@@ -38,9 +39,9 @@ class Rect {
 
     static fromSize(width, height) {
         if (width instanceof Vec2) {
-            return Rect(0, 0, width.width, width.height);
+            return new Rect(0, 0, width.width, width.height);
         }
-        return Rect(0, 0, width, height);
+        return new Rect(0, 0, width, height);
     }
 
     contains(point) {

@@ -1,5 +1,4 @@
-
-function mulberry32(seed) {
+export function mulberry32(seed) {
     return function() {
       var t = seed += 0x6D2B79F5;
       t = Math.imul(t ^ t >>> 15, t | 1);
@@ -8,7 +7,6 @@ function mulberry32(seed) {
     }
 }
 
-
-function randomInt({ min = 0, max = 1 }) {
+export function randomInt({ min = 0, max = 1 } = {}) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }

@@ -1,5 +1,4 @@
-
-class Vec2 {
+export default class Vec2 {
     constructor(x = 0, y = 0) {
         if (typeof x === 'object' && x !== null) {
             this.x = x.x;
