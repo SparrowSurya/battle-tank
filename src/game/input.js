@@ -62,7 +62,7 @@ export default class InputManager {
             this.mouse.clicked = true;
         });
 
-        canvas.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', () => {
             this.mouse.clicked = false;
         });
     }

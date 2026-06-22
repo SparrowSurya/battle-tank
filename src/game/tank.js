@@ -4,7 +4,7 @@ import { clamp, isSome, inRange, updateProjectile } from '../core/utils.js';
 import Projectile from './projectile.js';
 
 /**
- * Handles the tank physics, movement, aiming barrel, charge power, and projectile path prediction.
+ * Handles the tank physics, movement, gravity/falling updates, aiming barrel, charge power, and projectile path prediction.
  */
 export default class Tank {
     /**
@@ -14,6 +14,8 @@ export default class Tank {
      */
     constructor(x, width = 25) {
         this.x = x;
+        this.y = null; // Set dynamically on start or first update
+        this.velY = 0; // Vertical velocity for falling gravity physics
         this.width = width;
         this.height = 16;
         this.velocity = new Vec2(80, 30);
@@ -29,16 +31,61 @@ export default class Tank {
     }
 
     /**
-     * Updates the tank's physics state and checks if a projectile is launched.
+     * Helper to resolve the average ground height and slope directly beneath the tank's width.
+     * @param {Terrain} terrain - Terrain entity.
+     * @returns {{y: number, slope: number, hasGround: boolean}} Ground profile details.
+     */
+    getSurfaceHeightAndSlope(terrain) {
+        const tankWidth = this.width;
+        const leftX = Math.floor(this.x - tankWidth / 2);
+        const rightX = Math.floor(this.x + tankWidth / 2);
+
+        let sumY = 0;
+        let sumSlope = 0;
+        let count = 0;
+
+        for (let x = leftX; x <= rightX; x++) {
+            const info = terrain.surfaceInfo(x);
+            if (info && info.y !== null) {
+                sumY += info.y;
+                sumSlope += info.slope;
+                count++;
+            }
+        }
+
+        if (count > 0) {
+            return {
+                y: (sumY / count) + 1,
+                slope: sumSlope / count,
+                hasGround: true
+            };
+        }
+        return {
+            y: terrain.size.y, // Fallback to bottom of the screen
+            slope: 0,
+            hasGround: false
+        };
+    }
+
+    /**
+     * Updates the tank's physics state (horizontal movements, gravity vertical fall, landing, aiming limits).
      * @param {number} dt - Time delta in seconds.
      * @param {object} input - Snapshot of active input manager states.
      * @param {Terrain} terrain - Game terrain entity.
+     * @param {number} gravity - Gravity rate (pixels/second^2).
+     * @param {number} activeProjectilesCount - Count of currently active projectiles in the air.
      * @returns {Projectile|null} A new Projectile instance if fired, otherwise null.
      */
-    update(dt, input, terrain) {
+    update(dt, input, terrain, gravity, activeProjectilesCount) {
         const { keyboard, mouse } = input;
         
-        // 1. Move tank with uniform velocity along the terrain profile
+        // 0. Initialize Y coordinate to surface height if not yet set
+        const initialSurface = this.getSurfaceHeightAndSlope(terrain);
+        if (this.y === null) {
+            this.y = initialSurface.y;
+        }
+
+        // 1. Move tank horizontally along the terrain profile
         if (isSome(keyboard.key)) {
             const isLeft = keyboard.key === 'ArrowLeft';
             const isRight = keyboard.key === 'ArrowRight';
@@ -58,11 +105,31 @@ export default class Tank {
             }
         }
 
-        // 2. Firing trigger logic
+        // 2. Apply falling vertical gravity physics
+        const currentSurface = this.getSurfaceHeightAndSlope(terrain);
+        const inAirThreshold = 1.0;
+        
+        if (this.y < currentSurface.y - inAirThreshold) {
+            // Apply gravity update
+            this.velY += gravity * dt;
+            this.y += this.velY * dt;
+
+            // Check if we hit the ground this frame
+            if (this.y >= currentSurface.y) {
+                this.y = currentSurface.y;
+                this.velY = 0;
+            }
+        } else {
+            // Snap to surface profile and reset vertical velocity
+            this.y = currentSurface.y;
+            this.velY = 0;
+        }
+
+        // 3. Firing trigger logic (only allowed if there are no active projectiles)
         let firedProjectile = null;
         const nozzleInfo = this.getNozzleInfo(terrain);
 
-        if (nozzleInfo) {
+        if (nozzleInfo && activeProjectilesCount === 0) {
             const { nozzlePos } = nozzleInfo;
             if (mouse.clicked === true) {
                 if (!this.trigger.aimStart && mouse.present) {
@@ -84,31 +151,38 @@ export default class Tank {
                     this.trigger.power = 0;
                 }
             }
+        } else if (activeProjectilesCount > 0) {
+            // Lock aiming states if shots are currently active in the air
+            this.trigger.aimStart = null;
+            this.trigger.power = 0;
         }
 
         return firedProjectile;
     }
 
     /**
-     * Calculates the barrel nozzle absolute coordinates based on terrain slope.
+     * Calculates the barrel nozzle coordinates. If the tank is airborne, slope calculations are bypassed.
      * @param {Terrain} terrain - Terrain entity.
      * @returns {{nozzlePos: Vec2, slopeAngle: number, info: object}|null} Nozzle information details.
      */
     getNozzleInfo(terrain) {
         const info = terrain.surfaceInfo(this.x);
-        if (info === null) return null;
-
+        const surface = this.getSurfaceHeightAndSlope(terrain);
+        const inAir = this.y !== null && this.y < (surface.y - 1.0);
+        
+        const slopeAngle = inAir ? 0 : (info ? Math.atan(info.slope) : 0);
+        
         const nozzleOffset = 10;
-        const slopeAngle = Math.atan(info.slope);
+        const currentY = this.y !== null ? this.y : (info ? info.y : terrain.size.y);
         const nozzlePos = new Vec2(
             this.x + nozzleOffset * Math.sin(slopeAngle),
-            info.y - nozzleOffset * Math.cos(slopeAngle)
+            currentY - nozzleOffset * Math.cos(slopeAngle)
         );
         return { nozzlePos, slopeAngle, info };
     }
 
     /**
-     * Draws the tank body polygon aligned to the local terrain slope.
+     * Draws the tank body polygon. Stays flat while airborne, aligns to slope when grounded.
      * @param {CanvasRenderer} renderer - Renderer object.
      * @param {Terrain} terrain - Terrain entity.
      */
@@ -116,47 +190,29 @@ export default class Tank {
         const tankWidth = this.width;
         const tankHeight = this.height;
 
-        const leftX = Math.floor(this.x - tankWidth / 2);
-        const rightX = Math.floor(this.x + tankWidth / 2);
+        const surface = this.getSurfaceHeightAndSlope(terrain);
+        const inAir = this.y !== null && this.y < (surface.y - 1.0);
+        const angle = inAir ? 0 : Math.atan(surface.slope);
 
-        let sumY = 0;
-        let sumSlope = 0;
-        let count = 0;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
 
-        for (let x = leftX; x <= rightX; x++) {
-            const info = terrain.surfaceInfo(x);
-            if (info && info.y !== null) {
-                sumY += info.y;
-                sumSlope += info.slope;
-                count++;
-            }
-        }
+        const hw = tankWidth / 2;
+        const h = tankHeight;
 
-        if (count > 0) {
-            const avgY = (sumY / count) + 1;
-            const avgSlope = sumSlope / count;
-            const angle = Math.atan(avgSlope);
+        const corners = [
+            { x: -hw, y: 0 },
+            { x: hw, y: 0 },
+            { x: hw, y: -h },
+            { x: -hw, y: -h }
+        ];
 
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
+        const points = corners.map(p => new Vec2(
+            this.x + (p.x * cos - p.y * sin),
+            this.y + (p.x * sin + p.y * cos)
+        ));
 
-            const hw = tankWidth / 2;
-            const h = tankHeight;
-
-            const corners = [
-                { x: -hw, y: 0 },
-                { x: hw, y: 0 },
-                { x: hw, y: -h },
-                { x: -hw, y: -h }
-            ];
-
-            const points = corners.map(p => new Vec2(
-                this.x + (p.x * cos - p.y * sin),
-                avgY + (p.x * sin + p.y * cos)
-            ));
-
-            renderer.drawPolygon(points, this.color);
-        }
+        renderer.drawPolygon(points, this.color);
     }
 
     /**

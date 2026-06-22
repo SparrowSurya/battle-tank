@@ -41,6 +41,9 @@ export default class GameEngine {
         // Generate initial terrain
         this.terrain.generate();
         
+        // Initialize tank's vertical position on the surface
+        this.tank.y = this.tank.getSurfaceHeightAndSlope(this.terrain).y;
+        
         // Start listening to inputs
         this.input.listen(this.canvas);
         
@@ -77,7 +80,7 @@ export default class GameEngine {
         }
 
         // 2. Update tank (handles movement & aiming/firing)
-        const newProjectile = this.tank.update(dt, inputSnapshot, this.terrain);
+        const newProjectile = this.tank.update(dt, inputSnapshot, this.terrain, this.gravity, this.projectiles.length);
         if (newProjectile) {
             this.projectiles.push(newProjectile);
         }
